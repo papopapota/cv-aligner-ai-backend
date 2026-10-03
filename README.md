@@ -58,9 +58,10 @@ curl http://127.0.0.1:8000/health
 
 ## Endpoints
 
-| Método | Ruta       | Descripción                 | Respuesta             |
-| ------ | ---------- | --------------------------- | --------------------- |
-| GET    | `/health`  | Verificación de estado      | `{"status": "ok"}`    |
+| Método | Ruta            | Descripción                          | Respuesta          |
+| ------ | --------------- | ------------------------------------ | ------------------ |
+| GET    | `/health`       | Verificación de estado               | `{"status": "ok"}` |
+| POST   | `/cv/upload`    | Carga de CV (PDF/DOCX) + job spec    | CV parseado        |
 
 ## Arquitectura
 
