@@ -3,7 +3,7 @@
 Backend del optimizador de CV multi-agente, construido con FastAPI y arquitectura hexagonal.
 
 ## Stack
---hola 
+
 - Python 3.12+
 - Gestor de dependencias y entornos: [uv](https://docs.astral.sh/uv/)
 - Frameworks: FastAPI, Pydantic v2, LangGraph
