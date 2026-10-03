@@ -9,14 +9,52 @@ Backend del optimizador de CV multi-agente, construido con FastAPI y arquitectur
 - Frameworks: FastAPI, Pydantic v2, LangGraph
 - Testing: pytest, pytest-asyncio
 
-## Puesta en marcha
+## Instalación
+
+### Requisitos
+
+- Python 3.12+ (la versión exacta está fijada en `.python-version`)
+- [uv](https://docs.astral.sh/uv/)
+
+### 1. Instalar uv
+
+Si ya lo tienes, sáltate este paso.
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Alternativas: `pipx install uv` o `brew install uv`.
+
+### 2. Clonar el repositorio
+
+```bash
+git clone https://github.com/papopapota/cv-aligner-ai-backend.git
+cd cv-aligner-ai-backend
+```
+
+### 3. Crear el entorno e instalar dependencias
 
 ```bash
 uv sync
+```
+
+Crea `.venv` con la versión de Python de `.python-version`, instala el proyecto en editable y el grupo `dev` (pytest, pytest-asyncio).
+
+## Ejecución
+
+```bash
 uv run uvicorn src.main:app --reload
 ```
 
 La app queda disponible en `http://127.0.0.1:8000`, con la documentación interactiva en `/docs`.
+
+```bash
+curl http://127.0.0.1:8000/health
+# {"status":"ok"}
+```
+
+`uv run` usa el entorno del proyecto automáticamente. Si prefieres activarlo a mano: `source .venv/bin/activate` (en Windows, `.venv\Scripts\activate`).
 
 ## Endpoints
 
