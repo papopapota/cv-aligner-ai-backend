@@ -1,0 +1,76 @@
+ID REGISTRO: SINT-DEV-8842
+Jhon Doe
+ESPECIALISTA EN INGENIERÍA DE DATOS &
+BACKEND
+Identificador: CAND-XYZ-8842
+Correo ficticio: jhon.doe@ejemplo-pruebas.local
+Teléfono virtual: +34 555 019 842
+Región / Zona: Zona Horaria UTC+1 (Remoto /
+Ficticio)
+Repositorio demo: git.ficticio.internal/jhon-doe
+PERFIL PROFESIONAL SINTÉTICO
+Perfil profesional simulado para validación de pipelines de datos y plataformas de reclutamiento. Con más de 6 años
+de experiencia teórica en desarrollo de microservicios, optimización de consultas SQL/NoSQL e integración continua.
+Especializado en arquitectura orientada a eventos, rendimiento de APIs y modelado de datos anonimizados para
+pruebas de estrés y cumplimiento normativo.
+HISTORIAL LABORAL FICTICIO
+Ingeniero/a de Datos Senior — Empresa Alfa Tech S.L.
+(Simulada)
+2023 –
+Actualidad
+Diseño e implementación de tuberías de ingestión ETL procesando 1.5M de
+eventos simulados diarios mediante Kafka y Python.
+Reducción del 28% en la latencia de consultas relacionales mediante
+particionamiento de bases de datos PostgreSQL.
+Supervisión de políticas de anonimización y enmascaramiento dinámico de
+datos de prueba según directivas ISO-27001 sintéticas.
+Desarrollador/a Backend — Corporación Beta Solutions
+(Ficticia)
+2020 –
+2023
+Construcción y mantenimiento de 12 microservicios RESTful en Go y Node.js
+con un tiempo de actividad del 99.9%.
+Migración controlada de infraestructura local a contenedores Docker
+orquestados bajo clústeres Kubernetes simulados.
+Colaboración activa en flujos CI/CD automatizados mediante GitHub Actions,
+reduciendo los tiempos de despliegue en un 40%.
+Analista de Sistemas Junior — Servicios Gamma Data S.A.
+(Demo)
+2018 –
+2020
+Automatización de tareas de validación y limpieza de datos empleando scripts
+en Python y Bash.
+Generación de reportes de calidad de datos y tableros analíticos en
+herramientas de visualización interna.
+PROYECTOS RELEVANTES DE PRUEBA
+Generador de Datasets Sintéticos (Proyecto Abierto)
+Herramienta interna para la creación de esquemas estructurados con cumplimiento de
+privacidad.
+COMPETENCIAS TÉCNICAS
+Lenguajes
+Python Go SQL TypeScript
+Bases de Datos & Big Data
+PostgreSQL MongoDB Redis
+Apache Kafka
+Infraestructura & DevOps
+Docker Kubernetes AWS (Mock)
+Git / CI-CD
+FORMACIÓN ACADÉMICA
+Grado en Ingeniería Informática
+Universidad Politécnica Ficticia
+2014 – 2018 | Graduado
+Máster en Big Data & Cloud
+Instituto Tecnológico de Prueba
+2019 – 2020 | Mención de Honor
+CERTIFICACIONES DEMO
+Cloud Data Specialist (Simulada)
+ID Cert: CERT-90210-TEST
+Professional Scrum Developer
+ID Cert: PSD-MOCK-4412
+IDIOMAS
+Español: Nativo (Simulado)
+Inglés: C1 Avanzado (Técnico)
+Documento de Prueba Confidencial • Generación de Datos
+Sintéticos
+Página 1 de 1 • UUID: d9f8e21a-7b3c-4e89-91a0-
+00129842beef
