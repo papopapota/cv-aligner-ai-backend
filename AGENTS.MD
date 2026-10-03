@@ -6,6 +6,9 @@
 - Orquestación: LangGraph
 - HTTP Client: HTTPX (AsyncClient)
 
+## Diagrama de Arquitectura
+- El diagrama de la arquitectura está en [`arquitectura-tecnica-mermaid.md`](arquitectura-tecnica-mermaid.md). **Léelo antes de crear o modificar cualquier puerto, caso de uso o adapter**, y mantén los nombres alineados con el (ej. `OptimizeCVUseCase`, `CVParserPort`, `WorkflowOrchestratorPort`, `LLMAgentPort`, `VectorStorePort`, `DocumentExporterPort`).
+
 ## Arquitectura Hexagonal
 1. **Domain (`src/domain/`)**: Entidades puras y reglas de auditoría. Cero dependencias externas.
 2. **Application / Ports (`src/application/`)**:
@@ -32,4 +35,4 @@
 - Aislamiento Hexagonal:
   - En pruebas de Dominio: No usar mocks, probar lógica pura.
   - En pruebas de Aplicación / Servicios: Mockear los puertos de salida (`ports/out/`) usando `unittest.mock.AsyncMock`.
-  - En pruebas de Adaptadores Primarios (FastAPI): Usar `httpx.AsyncClient` con `ASGITransport` sobre la app de FastAPI para pruebas de integración/controlador.
+  - En pruebas de Adaptadores Inbound (FastAPI): Usar `httpx.AsyncClient` con `ASGITransport` sobre la app de FastAPI para pruebas de integración/controlador.

@@ -62,6 +62,12 @@ curl http://127.0.0.1:8000/health
 | ------ | ---------- | --------------------------- | --------------------- |
 | GET    | `/health`  | Verificación de estado      | `{"status": "ok"}`    |
 
+## Arquitectura
+
+El flujo completo del sistema —adaptadores inbound → puertos → dominio → puertos out → adaptadores out— está documentado en [`arquitectura-tecnica-mermaid.md`](arquitectura-tecnica-mermaid.md).
+
+Las reglas que lo gobiernan están en [`AGENTS.MD`](AGENTS.MD).
+
 ## Estructura
 
 ```text
