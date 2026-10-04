@@ -17,6 +17,6 @@ class UploadCVUseCase(ABC):
     async def execute(
         self,
         cv: FileUpload,
-        job_description: JobDescription,
-    ) -> CandidateCV:
+        job_description: FileUpload,
+    ) -> tuple[CandidateCV, JobDescription]:
         raise NotImplementedError

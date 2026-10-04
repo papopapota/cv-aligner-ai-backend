@@ -11,6 +11,7 @@ from src.domain.errors import InvalidUploadError, UnsupportedFormatError
 
 _PDF_EXTENSION = ".pdf"
 _DOCX_EXTENSION = ".docx"
+_TXT_EXTENSION = ".txt"
 
 
 class DocumentParserAdapter(CVParserPort):
@@ -23,8 +24,10 @@ class DocumentParserAdapter(CVParserPort):
             return self._parse_pdf(content)
         if extension == _DOCX_EXTENSION:
             return self._parse_docx(content)
+        if extension == _TXT_EXTENSION:
+            return self._parse_txt(content)
         raise UnsupportedFormatError(
-            f"Unsupported file format '{extension}'. Supported: .pdf, .docx."
+            f"Unsupported file format '{extension}'. Supported: .pdf, .docx, .txt."
         )
 
     def _parse_pdf(self, content: bytes) -> str:
@@ -41,6 +44,12 @@ class DocumentParserAdapter(CVParserPort):
         except Exception as exc:
             raise InvalidUploadError(f"Could not read the DOCX file: {exc}") from exc
         return self._extract_docx_text(document)
+
+    def _parse_txt(self, content: bytes) -> str:
+        try:
+            return content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise InvalidUploadError(f"Could not decode the text file as UTF-8: {exc}") from exc
 
     def _extract_docx_text(self, document: DocxDocument) -> str:
         parts = [paragraph.text for paragraph in document.paragraphs]

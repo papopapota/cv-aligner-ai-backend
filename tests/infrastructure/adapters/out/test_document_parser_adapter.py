@@ -102,6 +102,30 @@ async def test_rejects_a_corrupted_docx(parser: DocumentParserAdapter) -> None:
         await parser.parse("cv.docx", b"not a zip archive")
 
 
+async def test_parses_a_txt_file(parser: DocumentParserAdapter) -> None:
+    content = "Ana Developer\n5 years of experience".encode("utf-8")
+
+    text = await parser.parse("job.txt", content)
+
+    assert text == "Ana Developer\n5 years of experience"
+
+
+async def test_parses_a_txt_file_with_unicode(parser: DocumentParserAdapter) -> None:
+    content = "Desarrollador Python\nExperiencia: 5 años".encode("utf-8")
+
+    text = await parser.parse("job.txt", content)
+
+    assert text == "Desarrollador Python\nExperiencia: 5 años"
+
+
+async def test_rejects_a_txt_file_with_invalid_encoding(parser: DocumentParserAdapter) -> None:
+    # Invalid UTF-8 sequence
+    content = b"\xff\xfe"
+
+    with pytest.raises(InvalidUploadError):
+        await parser.parse("job.txt", content)
+
+
 async def test_rejects_an_unsupported_extension(parser: DocumentParserAdapter) -> None:
     with pytest.raises(UnsupportedFormatError):
-        await parser.parse("cv.txt", b"plain text")
+        await parser.parse("cv.rtf", b"plain text")

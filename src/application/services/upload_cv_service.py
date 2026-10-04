@@ -15,12 +15,22 @@ class UploadCVService(UploadCVUseCase):
     async def execute(
         self,
         cv: FileUpload,
-        job_description: JobDescription,
-    ) -> CandidateCV:
-        metadata = UploadedFileMetadata.from_bytes(
+        job_description: FileUpload,
+    ) -> tuple[CandidateCV, JobDescription]:
+        cv_metadata = UploadedFileMetadata.from_bytes(
             cv.filename,
             cv.content_type,
             cv.content,
         )
-        raw_text = await self._cv_parser.parse(cv.filename, cv.content)
-        return CandidateCV(metadata=metadata, raw_text=raw_text)
+        cv_raw_text = await self._cv_parser.parse(cv.filename, cv.content)
+        candidate_cv = CandidateCV(metadata=cv_metadata, raw_text=cv_raw_text)
+
+        jd_metadata = UploadedFileMetadata.from_job_description_bytes(
+            job_description.filename,
+            job_description.content_type,
+            job_description.content,
+        )
+        jd_raw_text = await self._cv_parser.parse(job_description.filename, job_description.content)
+        job_desc = JobDescription(metadata=jd_metadata, raw_text=jd_raw_text)
+
+        return candidate_cv, job_desc
