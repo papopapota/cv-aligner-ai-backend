@@ -58,10 +58,25 @@ curl http://127.0.0.1:8000/health
 
 ## Endpoints
 
-| Método | Ruta            | Descripción                          | Respuesta          |
-| ------ | --------------- | ------------------------------------ | ------------------ |
-| GET    | `/health`       | Verificación de estado               | `{"status": "ok"}` |
-| POST   | `/cv/upload`    | Carga de CV (PDF/DOCX) + job spec    | CV parseado        |
+| Método | Ruta         | Descripción                                | Respuesta             |
+| ------ | ------------ | ------------------------------------------ | --------------------- |
+| GET    | `/health`    | Verificación de estado                     | `{"status": "ok"}`    |
+| POST   | `/cv/upload` | Carga de CV y job spec, ambos en multipart | CV y spec parseados   |
+
+El pipeline multi-agente (`OptimizeCVUseCase`, orquestado con LangGraph) todavía no está expuesto por HTTP.
+
+### Contrato de `POST /cv/upload`
+
+Envía dos campos multipart. La job description es **un archivo `.txt`**, no texto pegado:
+
+| Campo                 | Tipo       | Extensiones        |
+| --------------------- | ---------- | ------------------ |
+| `cv_file`             | archivo    | `.pdf`, `.docx`    |
+| `job_description_file`| archivo    | `.txt`             |
+
+Ambos archivos están limitados a 10 MB. La respuesta incluye los metadatos y el texto extraído de cada uno (`extracted_text` / `jd_extracted_text`, con sus respectivos `sha256` y `characters_extracted`).
+
+Un formato no permitido, un archivo vacío, texto extraído vacío o superar el límite devuelven `400`. Si falta algún campo, `422`.
 
 ## Arquitectura
 

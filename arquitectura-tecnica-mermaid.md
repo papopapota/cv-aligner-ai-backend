@@ -5,7 +5,7 @@ flowchart TB
     %% ==========================================
     subgraph InboundAdapters["ADAPTADORES INBOUND<br/>src/infrastructure/adapters/inbound"]
         direction TB
-        API["FastAPI / REST Controller<br/>(Upload CV & Job Spec)"]
+        API["FastAPI / REST Controller<br/>(Upload CV .pdf/.docx + Job Spec .txt)"]
     end
 
     %% ==========================================

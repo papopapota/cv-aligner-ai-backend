@@ -1,5 +1,5 @@
 import hashlib
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 
 from src.domain import upload_rules
 from src.domain.errors import InvalidUploadError
@@ -14,11 +14,28 @@ class UploadedFileMetadata:
     content_type: str
     size_bytes: int
     sha256: str
+    allowed_extensions: InitVar[frozenset[str]] = upload_rules.ALLOWED_EXTENSIONS
 
-    def __post_init__(self) -> None:
-        upload_rules.ensure_allowed_extension(self.filename)
+    def __post_init__(self, allowed_extensions: frozenset[str]) -> None:
+        upload_rules.ensure_allowed_extension(self.filename, allowed_extensions)
         upload_rules.ensure_size_within_limit(self.size_bytes)
         self._ensure_valid_sha256()
+
+    @classmethod
+    def _build(
+        cls,
+        filename: str,
+        content_type: str,
+        content: bytes,
+        allowed_extensions: frozenset[str],
+    ) -> "UploadedFileMetadata":
+        return cls(
+            filename=filename,
+            content_type=content_type,
+            size_bytes=len(content),
+            sha256=hashlib.sha256(content).hexdigest(),
+            allowed_extensions=allowed_extensions,
+        )
 
     @classmethod
     def from_bytes(
@@ -27,11 +44,11 @@ class UploadedFileMetadata:
         content_type: str,
         content: bytes,
     ) -> "UploadedFileMetadata":
-        return cls(
+        return cls._build(
             filename=filename,
             content_type=content_type,
-            size_bytes=len(content),
-            sha256=hashlib.sha256(content).hexdigest(),
+            content=content,
+            allowed_extensions=upload_rules.ALLOWED_EXTENSIONS,
         )
 
     @classmethod
@@ -41,16 +58,12 @@ class UploadedFileMetadata:
         content_type: str,
         content: bytes,
     ) -> "UploadedFileMetadata":
-        # Bypass __post_init__ validation by using object.__new__ and object.__setattr__
-        instance = object.__new__(cls)
-        object.__setattr__(instance, "filename", filename)
-        object.__setattr__(instance, "content_type", content_type)
-        object.__setattr__(instance, "size_bytes", len(content))
-        object.__setattr__(instance, "sha256", hashlib.sha256(content).hexdigest())
-        # Validate with job description rules
-        upload_rules.ensure_job_description_extension(filename)
-        upload_rules.ensure_size_within_limit(len(content))
-        return instance
+        return cls._build(
+            filename=filename,
+            content_type=content_type,
+            content=content,
+            allowed_extensions=upload_rules.JOB_DESCRIPTION_ALLOWED_EXTENSIONS,
+        )
 
     def _ensure_valid_sha256(self) -> None:
         digest = self.sha256.lower()
