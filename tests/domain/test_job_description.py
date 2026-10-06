@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from src.domain.errors import EmptyContentError
+from src.domain.errors import EmptyContentError, UnsupportedFormatError
 from src.domain.job_description import JobDescription
 from src.domain.uploaded_file_metadata import UploadedFileMetadata
 
@@ -38,7 +38,7 @@ def test_rejects_invalid_extension() -> None:
         content_type="application/pdf",
         content=b"dummy",
     )
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(UnsupportedFormatError) as exc_info:
         JobDescription(metadata=metadata, raw_text=_RAW_TEXT)
     assert "txt" in str(exc_info.value).lower()
 
