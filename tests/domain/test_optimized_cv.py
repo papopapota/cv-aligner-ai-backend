@@ -9,14 +9,16 @@ from src.domain.optimized_cv import OptimizedCV
 _CONTENT = "Optimized CV body"
 
 
-def _optimized_cv(**overrides: object) -> OptimizedCV:
-    fields: dict[str, object] = {
-        "content": _CONTENT,
-        "variance_score": 0.1,
-        "writer_attempts": 1,
-    }
-    fields.update(overrides)
-    return OptimizedCV(**fields)
+def _optimized_cv(
+    content: str = _CONTENT,
+    variance_score: float = 0.1,
+    writer_attempts: int = 1,
+) -> OptimizedCV:
+    return OptimizedCV(
+        content=content,
+        variance_score=variance_score,
+        writer_attempts=writer_attempts,
+    )
 
 
 def test_creates_an_optimized_cv() -> None:
@@ -56,4 +58,4 @@ def test_is_immutable() -> None:
     optimized = _optimized_cv()
 
     with pytest.raises(dataclasses.FrozenInstanceError):
-        optimized.content = "another draft"
+        optimized.content = "another draft"  # type: ignore[misc]

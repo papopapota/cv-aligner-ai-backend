@@ -1,5 +1,6 @@
 import pytest
 
+from src.application.ports.out.llm_agent_port import AgentRole
 from src.domain.audit_rules import MAX_WRITER_ATTEMPTS
 from src.domain.candidate_cv import CandidateCV
 from src.domain.errors import InvalidUploadError
@@ -38,8 +39,16 @@ def _job_description() -> JobDescription:
     )
 
 
-def _orchestrator(**stub_kwargs: object) -> LangGraphOrchestratorAdapter:
-    return LangGraphOrchestratorAdapter(StubLLMAgentAdapter(**stub_kwargs))
+def _orchestrator(
+    variance_score: float = 0.1,
+    variance_score_on_first_attempt: float | None = None,
+) -> LangGraphOrchestratorAdapter:
+    return LangGraphOrchestratorAdapter(
+        StubLLMAgentAdapter(
+            variance_score=variance_score,
+            variance_score_on_first_attempt=variance_score_on_first_attempt,
+        )
+    )
 
 
 async def test_runs_the_whole_graph_and_approves_a_low_variance() -> None:
@@ -75,11 +84,10 @@ async def test_stops_retrying_at_the_attempt_cap() -> None:
 
 
 async def test_runs_the_nodes_in_order() -> None:
-    llm_agent = StubLLMAgentAdapter(variance_score=0.1)
     prompts: list[str] = []
 
     class _Recorder(StubLLMAgentAdapter):
-        async def complete(self, role, prompt: str) -> str:
+        async def complete(self, role: AgentRole, prompt: str) -> str:
             prompts.append(prompt)
             return await super().complete(role, prompt)
 
@@ -94,8 +102,8 @@ async def test_runs_the_nodes_in_order() -> None:
 
 async def test_rejects_an_audit_without_a_numeric_score() -> None:
     class _NoScore(StubLLMAgentAdapter):
-        async def complete(self, role, prompt: str) -> str:
-            if role.value == "auditor":
+        async def complete(self, role: AgentRole, prompt: str) -> str:
+            if role is AgentRole.AUDITOR:
                 return "I cannot tell"
             return await super().complete(role, prompt)
 

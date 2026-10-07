@@ -9,7 +9,6 @@ from src.application.ports.inbound.upload_cv_use_case import (
 from src.application.ports.out.cv_parser_port import CVParserPort
 from src.application.services.upload_cv_service import UploadCVService
 from src.domain.errors import UnsupportedFormatError
-from src.domain.job_description import JobDescription
 from src.domain.uploaded_file_metadata import UploadedFileMetadata
 
 _CONTENT = b"%PDF-1.7 fake cv bytes"

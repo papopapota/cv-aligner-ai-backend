@@ -47,4 +47,4 @@ def test_is_immutable() -> None:
     description = JobDescription(metadata=_JD_METADATA, raw_text=_RAW_TEXT)
 
     with pytest.raises(dataclasses.FrozenInstanceError):
-        description.raw_text = "another offer"
+        description.raw_text = "another offer"  # type: ignore[misc]

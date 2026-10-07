@@ -16,15 +16,18 @@ _CONTENT = b"%PDF-1.7 fake resume bytes"
 _JOB_SPEC_CONTENT = "We are looking for a Python developer.".encode("utf-8")
 
 
-def _metadata(**overrides: object) -> UploadedFileMetadata:
-    fields: dict[str, object] = {
-        "filename": "cv.pdf",
-        "content_type": "application/pdf",
-        "size_bytes": len(_CONTENT),
-        "sha256": hashlib.sha256(_CONTENT).hexdigest(),
-    }
-    fields.update(overrides)
-    return UploadedFileMetadata(**fields)
+def _metadata(
+    filename: str = "cv.pdf",
+    content_type: str = "application/pdf",
+    size_bytes: int | None = None,
+    sha256: str | None = None,
+) -> UploadedFileMetadata:
+    return UploadedFileMetadata(
+        filename=filename,
+        content_type=content_type,
+        size_bytes=len(_CONTENT) if size_bytes is None else size_bytes,
+        sha256=hashlib.sha256(_CONTENT).hexdigest() if sha256 is None else sha256,
+    )
 
 
 def test_from_bytes_derives_size_and_digest() -> None:
@@ -80,7 +83,7 @@ def test_is_immutable() -> None:
     metadata = _metadata()
 
     with pytest.raises(dataclasses.FrozenInstanceError):
-        metadata.filename = "other.pdf"
+        metadata.filename = "other.pdf"  # type: ignore[misc]
 
 
 def test_job_description_metadata_derives_size_and_digest() -> None:
@@ -152,9 +155,9 @@ def test_the_validation_policy_does_not_leak_into_equality_or_repr() -> None:
 
     assert default_policy == custom_policy
     assert "allowed_extensions" not in repr(custom_policy)
-    assert UploadedFileMetadata.__slots__ == (
+    assert list(UploadedFileMetadata.__slots__) == [
         "filename",
         "content_type",
         "size_bytes",
         "sha256",
-    )
+    ]
