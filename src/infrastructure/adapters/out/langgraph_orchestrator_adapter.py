@@ -1,4 +1,5 @@
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from src.application.ports.out.llm_agent_port import AgentRole, LLMAgentPort
 from src.application.ports.out.workflow_orchestrator_port import (
@@ -22,7 +23,7 @@ _APPROVE = "approve"
 class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
     def __init__(self, llm_agent: LLMAgentPort) -> None:
         self._llm_agent = llm_agent
-        self._graph = self._build_graph()
+        self._graph: CompiledStateGraph[SharedState] = self._build_graph()
 
     async def optimize(
         self,
@@ -30,10 +31,10 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         job_description: JobDescription,
     ) -> OptimizedCV:
         final_state = await self._graph.ainvoke(
-            {
-                "candidate_cv_text": candidate.raw_text,
-                "job_description_text": job_description.raw_text,
-            }
+            SharedState(
+                candidate_cv_text=candidate.raw_text,
+                job_description_text=job_description.raw_text,
+            )
         )
 
         return OptimizedCV(
@@ -42,8 +43,8 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             writer_attempts=final_state["writer_attempts"],
         )
 
-    def _build_graph(self):
-        graph = StateGraph(SharedState)
+    def _build_graph(self) -> CompiledStateGraph[SharedState]:
+        graph: StateGraph[SharedState] = StateGraph(SharedState)
         graph.add_node("extractor", self._extractor)
         graph.add_node("analyzer", self._analyzer)
         graph.add_node("writer", self._writer)
@@ -61,14 +62,14 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
 
         return graph.compile()
 
-    async def _extractor(self, state: SharedState) -> dict:
+    async def _extractor(self, state: SharedState) -> dict[str, object]:
         profile = await self._llm_agent.complete(
             AgentRole.EXTRACTOR,
             f"Candidate CV:\n{state.candidate_cv_text}",
         )
         return {"extracted_profile": profile}
 
-    async def _analyzer(self, state: SharedState) -> dict:
+    async def _analyzer(self, state: SharedState) -> dict[str, object]:
         analysis = await self._llm_agent.complete(
             AgentRole.ANALYZER,
             f"Job description:\n{state.job_description_text}\n"
@@ -76,7 +77,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         )
         return {"gap_analysis": analysis}
 
-    async def _writer(self, state: SharedState) -> dict:
+    async def _writer(self, state: SharedState) -> dict[str, object]:
         optimized_text = await self._llm_agent.complete(
             AgentRole.WRITER,
             f"Gaps:\n{state.gap_analysis}\nCV:\n{state.candidate_cv_text}",
@@ -86,7 +87,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             "writer_attempts": state.writer_attempts + 1,
         }
 
-    async def _auditor(self, state: SharedState) -> dict:
+    async def _auditor(self, state: SharedState) -> dict[str, object]:
         audit = await self._llm_agent.complete(
             AgentRole.AUDITOR,
             f"Optimized CV:\n{state.optimized_text}",
