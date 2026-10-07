@@ -58,12 +58,28 @@ curl http://127.0.0.1:8000/health
 
 ## Endpoints
 
-| Método | Ruta         | Descripción                                | Respuesta             |
-| ------ | ------------ | ------------------------------------------ | --------------------- |
-| GET    | `/health`    | Verificación de estado                     | `{"status": "ok"}`    |
-| POST   | `/cv/upload` | Carga de CV y job spec, ambos en multipart | CV y spec parseados   |
+| Método | Ruta            | Descripción                                | Respuesta                  |
+| ------ | --------------- | ------------------------------------------ | -------------------------- |
+| GET    | `/health`       | Verificación de estado                     | `{"status": "ok"}`         |
+| POST   | `/cv/upload`    | Carga de CV y job spec, ambos en multipart | CV y spec parseados        |
+| POST   | `/cv/optimize`  | Pipeline multi-agente sobre el CV y la spec | CV optimizado y auditado   |
 
-El pipeline multi-agente (`OptimizeCVUseCase`, orquestado con LangGraph) todavía no está expuesto por HTTP.
+Ambos endpoints reciben los mismos dos campos multipart (`cv_file` y `job_description_file`), porque el flujo es sin estado: `/cv/optimize` vuelve a parsear los archivos en lugar de guardarlos.
+
+### Contrato de `POST /cv/optimize`
+
+Ejecuta el grafo de LangGraph (extractor → analyzer → writer → auditor). Si la varianza del auditor supera el umbral, el writer se reintenta hasta 3 veces.
+
+| Campo         | Extensiones     |
+| ------------- | --------------- |
+| `cv_file`     | `.pdf`, `.docx` |
+| `job_description_file` | `.txt`  |
+
+Respuesta: `optimized_content`, `variance_score`, `writer_attempts` e `is_within_threshold`.
+
+Si el CV no converge tras los reintentos, devuelve `422` con el detalle del fallo de auditoría. `400` para formatos o tamaños inválidos, `422` si falta un campo.
+
+> **Aviso:** el pipeline corre hoy contra un `StubLLMAgentAdapter`, no contra un modelo real. El texto devuelto es fijo y no es una optimización legítima. Sustituir el adaptador en `src/composition.py` antes de usar la salida en producción.
 
 ### Contrato de `POST /cv/upload`
 
