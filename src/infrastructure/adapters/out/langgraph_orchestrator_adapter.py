@@ -1,3 +1,6 @@
+import json
+import re
+
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -18,6 +21,32 @@ from src.domain.shared_state import SharedState
 
 _RETRY = "retry"
 _APPROVE = "approve"
+_JSON_OBJECT_PATTERN = re.compile(r"\{[^{}]*\}")
+
+
+def parse_variance_score(audit: str) -> float:
+    structured = _extract_variance_score_from_json(audit)
+    if structured is not None:
+        return structured
+    for token in audit.replace(",", ".").split():
+        try:
+            return float(token)
+        except ValueError:
+            continue
+    raise InvalidUploadError(
+        "The auditor did not return a numeric variance score."
+    )
+
+
+def _extract_variance_score_from_json(audit: str) -> float | None:
+    match = _JSON_OBJECT_PATTERN.search(audit)
+    if match is None:
+        return None
+    try:
+        payload = json.loads(match.group(0))
+        return float(payload["variance_score"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
@@ -80,7 +109,9 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
     async def _writer(self, state: SharedState) -> dict[str, object]:
         optimized_text = await self._llm_agent.complete(
             AgentRole.WRITER,
-            f"Gaps:\n{state.gap_analysis}\nCV:\n{state.candidate_cv_text}",
+            f"Job description:\n{state.job_description_text}\n"
+            f"Gaps:\n{state.gap_analysis}\n"
+            f"CV:\n{state.candidate_cv_text}",
         )
         return {
             "optimized_text": optimized_text,
@@ -90,9 +121,11 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
     async def _auditor(self, state: SharedState) -> dict[str, object]:
         audit = await self._llm_agent.complete(
             AgentRole.AUDITOR,
+            f"Job description:\n{state.job_description_text}\n"
+            f"Gaps:\n{state.gap_analysis}\n"
             f"Optimized CV:\n{state.optimized_text}",
         )
-        return {"variance_score": self._parse_variance_score(audit)}
+        return {"variance_score": parse_variance_score(audit)}
 
     def _route_after_audit(self, state: SharedState) -> str:
         decision = evaluate_variance(state.variance_score)
@@ -102,13 +135,3 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         ):
             return _RETRY
         return _APPROVE
-
-    def _parse_variance_score(self, audit: str) -> float:
-        for token in audit.replace(",", ".").split():
-            try:
-                return float(token)
-            except ValueError:
-                continue
-        raise InvalidUploadError(
-            "The auditor did not return a numeric variance score."
-        )
