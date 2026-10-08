@@ -16,3 +16,7 @@ class FileTooLargeError(InvalidUploadError):
 
 class EmptyContentError(InvalidUploadError):
     pass
+
+
+class AuditFailedError(DomainError):
+    pass

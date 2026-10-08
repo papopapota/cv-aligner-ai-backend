@@ -1,0 +1,13 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff
+        entry: ruff check
+  - repo: local
+    hooks:
+      - id: related-tests
+        name: Run pytest on tests affected by staged files
+        entry: uv run python scripts/pre_commit_tests.py
+        language: system
+        files: ^(src|tests)/.*\.py$

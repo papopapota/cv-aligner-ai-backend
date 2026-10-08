@@ -22,7 +22,10 @@ def ensure_size_within_limit(size_bytes: int) -> None:
         )
 
 
-def ensure_allowed_extension(filename: str, allowed_extensions: frozenset[str] | None = None) -> None:
+def ensure_allowed_extension(
+    filename: str,
+    allowed_extensions: frozenset[str] | None = None,
+) -> None:
     extensions = allowed_extensions or ALLOWED_EXTENSIONS
     if Path(filename).suffix.lower() not in extensions:
         allowed = ", ".join(sorted(extensions))

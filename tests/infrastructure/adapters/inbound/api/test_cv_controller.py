@@ -1,4 +1,5 @@
 import io
+from collections.abc import Generator
 
 import docx
 import pytest
@@ -52,7 +53,7 @@ def _blank_pdf_bytes() -> bytes:
 
 
 @pytest.fixture(autouse=True)
-def _stub_the_use_case():
+def _stub_the_use_case() -> Generator[None, None, None]:
     app.dependency_overrides[get_upload_cv_use_case] = lambda: UploadCVService(
         _StubParser()
     )
