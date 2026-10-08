@@ -8,6 +8,7 @@ from src.domain.job_description import JobDescription
 from src.domain.uploaded_file_metadata import UploadedFileMetadata
 from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
     LangGraphOrchestratorAdapter,
+    parse_variance_score,
 )
 from src.infrastructure.adapters.out.stub_llm_agent_adapter import (
     StubLLMAgentAdapter,
@@ -15,6 +16,7 @@ from src.infrastructure.adapters.out.stub_llm_agent_adapter import (
 
 _CV_TEXT = "Python backend engineer with fastapi."
 _JOB_TEXT = "Looking for a FastAPI developer."
+_GAP_TEXT = "GAP ANALYSIS: missing kubernetes and postgres depth."
 
 
 def _candidate() -> CandidateCV:
@@ -98,6 +100,9 @@ async def test_runs_the_nodes_in_order() -> None:
     assert len(prompts) == 4
     assert _CV_TEXT in prompts[0]
     assert _JOB_TEXT in prompts[1]
+    assert _JOB_TEXT in prompts[2]
+    assert _JOB_TEXT in prompts[3]
+    assert _GAP_TEXT in prompts[3]
 
 
 async def test_rejects_an_audit_without_a_numeric_score() -> None:
@@ -111,3 +116,26 @@ async def test_rejects_an_audit_without_a_numeric_score() -> None:
 
     with pytest.raises(InvalidUploadError):
         await orchestrator.optimize(_candidate(), _job_description())
+
+
+def test_parses_a_pure_json_audit() -> None:
+    assert parse_variance_score('{"variance_score": 0.4, "reason": "ok"}') == 0.4
+
+
+def test_parses_a_json_audit_wrapped_in_markdown_fences() -> None:
+    audit = '```json\n{"variance_score": 0.2, "reason": "close enough"}\n```'
+
+    assert parse_variance_score(audit) == 0.2
+
+
+def test_falls_back_to_a_free_float_when_there_is_no_json() -> None:
+    assert parse_variance_score("Variance below 0.20") == 0.2
+
+
+def test_parses_a_integer_score_in_json() -> None:
+    assert parse_variance_score('{"variance_score": 1}') == 1.0
+
+
+def test_rejects_an_audit_without_any_numeric_score() -> None:
+    with pytest.raises(InvalidUploadError):
+        parse_variance_score("I cannot tell")
