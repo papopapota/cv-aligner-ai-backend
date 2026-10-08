@@ -7,6 +7,7 @@ Backend del optimizador de CV multi-agente, construido con FastAPI y arquitectur
 - Python 3.12+
 - Gestor de dependencias y entornos: [uv](https://docs.astral.sh/uv/)
 - Frameworks: FastAPI, Pydantic v2, LangGraph
+- LLM: SDK oficial `openai` (compatible con OpenAI, Ollama, LM Studio, etc.)
 - Testing: pytest, pytest-asyncio
 
 ## Instalación
@@ -56,6 +57,24 @@ curl http://127.0.0.1:8000/health
 
 `uv run` usa el entorno del proyecto automáticamente. Si prefieres activarlo a mano: `source .venv/bin/activate` (en Windows, `.venv\Scripts\activate`).
 
+## Configuración del LLM
+
+Copia `.env.example` a `.env` (el `.env` no se commitea):
+
+| Variable | Uso |
+| --- | --- |
+| `LLM_API_KEY` | Obligatoria. Sin ella `uvicorn` falla al arrancar con un mensaje claro. |
+| `LLM_BASE_URL` | Vacío usa el endpoint de OpenAI. Para local (Ollama, LM Studio) pon su URL de API. |
+| `LLM_MODEL` | Modelo por defecto (`gpt-4o-mini`). |
+| `LLM_MAX_TOKENS` | Default global: tope de cada rol que no defina su propia variable. |
+| `LLM_EXTRACTOR_MAX_TOKENS` | Tope del extractor. No definida → `LLM_MAX_TOKENS`. |
+| `LLM_ANALYZER_MAX_TOKENS` | Tope del analyzer. No definida → `LLM_MAX_TOKENS`. |
+| `LLM_WRITER_MAX_TOKENS` | Tope del writer. No definida → `LLM_MAX_TOKENS`. |
+| `LLM_AUDITOR_MAX_TOKENS` | Tope del auditor. No definida → `LLM_MAX_TOKENS`. |
+| `LLM_TIMEOUT_SECONDS` | Timeout por llamada en segundos. |
+
+El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extractor/analyzer/writer/auditor) con temperatura distinta por rol. El auditor responde JSON `{"variance_score": …}` y, si no, el grafo intenta parsear el primer número del texto como fallback.
+
 ## Endpoints
 
 | Método | Ruta            | Descripción                                | Respuesta                  |
@@ -79,7 +98,7 @@ Respuesta: `optimized_content`, `variance_score`, `writer_attempts` e `is_within
 
 Si el CV no converge tras los reintentos, devuelve `422` con el detalle del fallo de auditoría. `400` para formatos o tamaños inválidos, `422` si falta un campo.
 
-> **Aviso:** el pipeline corre hoy contra un `StubLLMAgentAdapter`, no contra un modelo real. El texto devuelto es fijo y no es una optimización legítima. Sustituir el adaptador en `src/composition.py` antes de usar la salida en producción.
+> **Nota:** el pipeline llama a un LLM real compatible OpenAI (SDK `openai`). Requiere `LLM_API_KEY` en `.env`; si no está configurada, la app no arranca. Para desarrollo sin clave, apunta `LLM_BASE_URL` a un servidor local como Ollama o LM Studio.
 
 ### Contrato de `POST /cv/upload`
 
@@ -115,7 +134,7 @@ src/
     └── adapters/
         ├── inbound/
         │   └── api/                # Controladores FastAPI, routers y DTOs
-        └── out/                   # Implementaciones de los puertos de salida (HTTPX, LangGraph, parsers)
+        └── out/                   # Implementaciones de los puertos de salida (SDK openai, LangGraph, parsers)
 ```
 
 `ports/inbound/` no se llama `ports/in/` porque `in` es una palabra reservada en Python y no se puede importar de forma estática.

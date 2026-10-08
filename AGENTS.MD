@@ -4,7 +4,8 @@
 - Python 3.12+ con uv
 - Framework: FastAPI + Pydantic v2
 - Orquestación: LangGraph
-- HTTP Client: HTTPX (AsyncClient)
+- LLM: SDK oficial `openai` (compatible con OpenAI, Ollama, LM Studio, etc.)
+- HTTP Client: HTTPX (AsyncClient) para parsers/testeo
 
 ## Diagrama de Arquitectura
 - El diagrama de la arquitectura está en [`arquitectura-tecnica-mermaid.md`](arquitectura-tecnica-mermaid.md). **Léelo antes de crear o modificar cualquier puerto, caso de uso o adapter**, y mantén los nombres alineados con el (ej. `OptimizeCVUseCase`, `CVParserPort`, `WorkflowOrchestratorPort`, `LLMAgentPort`, `VectorStorePort`, `DocumentExporterPort`).
@@ -17,7 +18,7 @@
    - `services/`: Implementación de los casos de uso.
 3. **Infrastructure (`src/infrastructure/`)**:
    - `adapters/inbound/api/`: Controladores FastAPI, routers y DTOs.
-   - `adapters/out/`: Implementaciones de los puertos de salida (HTTPX para LLM, LangGraph, parsers).
+   - `adapters/out/`: Implementaciones de los puertos de salida (LLM con SDK `openai`, LangGraph, parsers).
 
 ## Regla de Dependencias
 - `domain/` y `application/` no importan nada desde `infrastructure/`.
