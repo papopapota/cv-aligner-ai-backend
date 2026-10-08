@@ -1,7 +1,7 @@
 from functools import lru_cache
 
 from openai import AsyncOpenAI
-
+ 
 from src.application.ports.inbound.optimize_cv_use_case import OptimizeCVUseCase
 from src.application.ports.inbound.upload_cv_use_case import UploadCVUseCase
 from src.application.services.optimize_cv_service import OptimizeCVService
