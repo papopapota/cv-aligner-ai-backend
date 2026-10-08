@@ -32,6 +32,7 @@ module-root = ""
 dev = [
     "httpx2>=2.13.1",
     "mypy>=1.19.1",
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.15.5",

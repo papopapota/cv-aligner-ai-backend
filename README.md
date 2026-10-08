@@ -147,6 +147,20 @@ Cada archivo en `src/` tiene su espejo en `tests/`. Las pruebas de adaptadores i
 uv run pytest
 ```
 
+## Pre-commit
+
+Hooks locales que se ejecutan en cada `git commit`, limitados a linting y pruebas relacionadas con los archivos staged:
+
+- `ruff check`: linting de los archivos staged (config en `pyproject.toml`).
+- `related-tests`: `pytest` sobre los tests afectados (tests staged directamente y el espejo de cada `src/` modificado; si no hay espejo exacto, busca los tests que referencian el módulo). Si no hay tests relevantes, el hook no hace nada.
+
+La suite completa y los chequeos de tipos quedan en la CI (GitHub Actions).
+
+```bash
+uv run pre-commit install          # instalar los hooks en el repositorio
+uv run pre-commit run --all-files  # primera vez: validar todo el proyecto
+```
+
 ## Convenciones
 
 - Tipado estricto en todas las anotaciones.
