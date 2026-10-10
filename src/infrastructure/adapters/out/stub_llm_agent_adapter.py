@@ -1,7 +1,10 @@
 from src.application.ports.out.llm_agent_port import AgentRole, LLMAgentPort
 
 _EXTRACTOR_RESPONSE = (
-    "EXTRACTED PROFILE: backend engineer with python and fastapi experience."
+    '{"summary": "EXTRACTED PROFILE: backend engineer with python and fastapi '
+    'experience.", "technical_skills": "python, fastapi", "experience": '
+    '"backend engineering", "education": "", "certifications": "", '
+    '"languages": ""}'
 )
 _ANALYZER_RESPONSE = "GAP ANALYSIS: missing kubernetes and postgres depth."
 _WRITER_RESPONSE = "OPTIMIZED CV: python backend engineer with fastapi and postgres."
@@ -13,9 +16,11 @@ class StubLLMAgentAdapter(LLMAgentPort):
         self,
         variance_score: float = 0.1,
         variance_score_on_first_attempt: float | None = None,
+        writer_outputs: list[str] | None = None,
     ) -> None:
         self._variance_score = variance_score
         self._variance_score_on_first_attempt = variance_score_on_first_attempt
+        self._writer_outputs = list(writer_outputs) if writer_outputs else None
 
     async def complete(self, role: AgentRole, prompt: str) -> str:
         if role is AgentRole.EXTRACTOR:
@@ -23,6 +28,8 @@ class StubLLMAgentAdapter(LLMAgentPort):
         if role is AgentRole.ANALYZER:
             return _ANALYZER_RESPONSE
         if role is AgentRole.WRITER:
+            if self._writer_outputs:
+                return self._writer_outputs.pop(0)
             return _WRITER_RESPONSE
         if self._variance_score_on_first_attempt is not None:
             score = self._variance_score_on_first_attempt

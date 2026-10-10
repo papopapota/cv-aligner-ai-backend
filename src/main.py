@@ -4,10 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.composition import build_optimize_cv_use_case
-from src.domain.errors import AuditFailedError, InvalidUploadError
-from src.infrastructure.adapters.inbound.api.audit_error_handler import (
-    handle_audit_failure,
-)
+from src.domain.errors import InvalidUploadError
 from src.infrastructure.adapters.inbound.api.cv_controller import (
     router as cv_router,
 )
@@ -33,7 +30,6 @@ app = FastAPI(
 )
 
 app.add_exception_handler(InvalidUploadError, handle_invalid_upload)
-app.add_exception_handler(AuditFailedError, handle_audit_failure)
 app.include_router(cv_router)
 app.include_router(cv_optimize_router)
 

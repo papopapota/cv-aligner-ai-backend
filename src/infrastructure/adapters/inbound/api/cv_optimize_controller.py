@@ -48,4 +48,7 @@ async def optimize_cv(
         variance_score=optimized.variance_score,
         writer_attempts=optimized.writer_attempts,
         is_within_threshold=optimized.is_within_threshold(),
+        r_total=optimized.r_total,
+        per_dimension=optimized.per_dimension,
+        gap_report=optimized.gap_report,
     )

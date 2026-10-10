@@ -7,7 +7,6 @@ from httpx import ASGITransport, AsyncClient
 
 from src.application.services.optimize_cv_service import OptimizeCVService
 from src.composition import build_optimize_cv_use_case
-from src.domain.errors import AuditFailedError
 from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
     LangGraphOrchestratorAdapter,
 )
@@ -70,6 +69,12 @@ async def test_optimize_returns_the_audited_cv(client: AsyncClient) -> None:
     assert payload["variance_score"] == 0.1
     assert payload["writer_attempts"] == 2
     assert payload["is_within_threshold"] is True
+    assert payload["r_total"] is None
+    assert payload["per_dimension"] == {}
+    assert payload["gap_report"]
+    assert payload["r_total"] is None
+    assert payload["per_dimension"] == {}
+    assert payload["gap_report"]
 
 
 async def test_optimize_with_the_real_pdf_fixture(
@@ -122,7 +127,7 @@ async def test_optimize_requires_both_files(client: AsyncClient) -> None:
     assert response.status_code == 422
 
 
-async def test_optimize_returns_422_when_the_variance_never_converges(
+async def test_optimize_returns_a_best_effort_cv_when_the_variance_never_converges(
     client: AsyncClient,
 ) -> None:
     app.dependency_overrides[build_optimize_cv_use_case] = lambda: (
@@ -139,10 +144,9 @@ async def test_optimize_returns_422_when_the_variance_never_converges(
         },
     )
 
-    assert response.status_code == 422
-    assert "variance audit" in response.json()["detail"]
-
-
-async def test_the_audit_failure_is_a_business_error_not_a_server_error() -> None:
-    assert issubclass(AuditFailedError, Exception)
-    assert not issubclass(AuditFailedError, ConnectionError)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["optimized_content"]
+    assert payload["writer_attempts"] == 3
+    assert payload["is_within_threshold"] is False
+    assert payload["gap_report"]
