@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -17,6 +18,8 @@ from src.infrastructure.adapters.inbound.api.cv_optimize_controller import (
 from src.infrastructure.adapters.inbound.api.domain_error_handler import (
     handle_invalid_upload,
 )
+
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager

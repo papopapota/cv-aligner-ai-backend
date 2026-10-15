@@ -15,7 +15,11 @@ from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
 from src.infrastructure.adapters.out.openai_llm_agent_adapter import (
     OpenAILLMAgentAdapter,
 )
-from src.infrastructure.config import LLMConfigurationError, LLMSettings
+from src.infrastructure.config import (
+    AuditSettings,
+    LLMConfigurationError,
+    LLMSettings,
+)
 
 
 def build_upload_cv_use_case() -> UploadCVUseCase:
@@ -25,6 +29,7 @@ def build_upload_cv_use_case() -> UploadCVUseCase:
 @lru_cache(maxsize=1)
 def build_optimize_cv_use_case() -> OptimizeCVUseCase:
     settings = LLMSettings()
+    audit_settings = AuditSettings()
     if not settings.api_key:
         raise LLMConfigurationError(
             "LLM_API_KEY is not configured. Copy .env.example to .env and "
@@ -47,5 +52,8 @@ def build_optimize_cv_use_case() -> OptimizeCVUseCase:
         max_tokens=settings.max_tokens,
         max_tokens_by_role=settings.max_tokens_by_role(),
     )
-    orchestrator = LangGraphOrchestratorAdapter(llm_agent)
+    orchestrator = LangGraphOrchestratorAdapter(
+        llm_agent,
+        variance_threshold=audit_settings.variance_threshold,
+    )
     return OptimizeCVService(orchestrator)

@@ -72,8 +72,11 @@ Copia `.env.example` a `.env` (el `.env` no se commitea):
 | `LLM_WRITER_MAX_TOKENS` | Tope del writer. No definida → `LLM_MAX_TOKENS`. |
 | `LLM_AUDITOR_MAX_TOKENS` | Tope del auditor. No definida → `LLM_MAX_TOKENS`. |
 | `LLM_TIMEOUT_SECONDS` | Timeout por llamada en segundos. |
+| `AUDIT_VARIANCE_THRESHOLD` | Umbral de varianza del auditor (0..1, default 0.35). Por encima, el writer se reintenta. |
 
 El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extractor/analyzer/writer/auditor) con temperatura distinta por rol. El auditor responde JSON `{"variance_score": …}` y, si no, el grafo intenta parsear el primer número del texto como fallback.
+
+En cada reintento el writer recibe el CV optimizado anterior y el motivo (`reason`) del auditor para corregir las carencias señaladas. El adaptador registra por log el `variance_score` y el `reason` de cada intento (nivel INFO/WARNING) para diagnosticar por qué no converge.
 
 ## Endpoints
 

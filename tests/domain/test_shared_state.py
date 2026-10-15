@@ -21,6 +21,7 @@ def test_starts_empty_with_a_variance_of_one_and_no_attempts() -> None:
     assert state.gap_analysis == ""
     assert state.optimized_text == ""
     assert state.variance_score == 1.0
+    assert state.audit_reason == ""
     assert state.writer_attempts == 0
 
 

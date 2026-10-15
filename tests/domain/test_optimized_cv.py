@@ -13,11 +13,13 @@ def _optimized_cv(
     content: str = _CONTENT,
     variance_score: float = 0.1,
     writer_attempts: int = 1,
+    variance_threshold: float = MAX_VARIANCE_THRESHOLD,
 ) -> OptimizedCV:
     return OptimizedCV(
         content=content,
         variance_score=variance_score,
         writer_attempts=writer_attempts,
+        variance_threshold=variance_threshold,
     )
 
 
@@ -51,6 +53,17 @@ def test_is_within_the_threshold() -> None:
     assert _optimized_cv(variance_score=MAX_VARIANCE_THRESHOLD).is_within_threshold()
     assert not _optimized_cv(
         variance_score=MAX_VARIANCE_THRESHOLD + 0.01
+    ).is_within_threshold()
+
+
+def test_uses_a_custom_threshold() -> None:
+    assert _optimized_cv(
+        variance_score=0.6,
+        variance_threshold=0.7,
+    ).is_within_threshold()
+    assert not _optimized_cv(
+        variance_score=0.6,
+        variance_threshold=0.5,
     ).is_within_threshold()
 
 

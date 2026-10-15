@@ -1,7 +1,8 @@
 import pytest
 
 from src.application.ports.out.llm_agent_port import AgentRole
-from src.infrastructure.config import LLMSettings
+from src.domain.audit_rules import MAX_VARIANCE_THRESHOLD
+from src.infrastructure.config import AuditSettings, LLMSettings
 
 
 def test_exposes_no_max_token_overrides_by_default(
@@ -37,3 +38,23 @@ def _clear_role_max_tokens_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LLM_AUDITOR_MAX_TOKENS",
     ):
         monkeypatch.delenv(variable, raising=False)
+
+
+def test_audit_variance_threshold_defaults_to_the_domain_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AUDIT_VARIANCE_THRESHOLD", raising=False)
+
+    settings = AuditSettings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.variance_threshold == MAX_VARIANCE_THRESHOLD
+
+
+def test_audit_variance_threshold_can_be_overridden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AUDIT_VARIANCE_THRESHOLD", "0.5")
+
+    settings = AuditSettings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.variance_threshold == 0.5

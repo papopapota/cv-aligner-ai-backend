@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 
 from langgraph.graph import END, START, StateGraph
@@ -9,6 +10,7 @@ from src.application.ports.out.workflow_orchestrator_port import (
     WorkflowOrchestratorPort,
 )
 from src.domain.audit_rules import (
+    MAX_VARIANCE_THRESHOLD,
     MAX_WRITER_ATTEMPTS,
     AuditDecision,
     evaluate_variance,
@@ -18,6 +20,8 @@ from src.domain.errors import InvalidUploadError
 from src.domain.job_description import JobDescription
 from src.domain.optimized_cv import OptimizedCV
 from src.domain.shared_state import SharedState
+
+logger = logging.getLogger(__name__)
 
 _RETRY = "retry"
 _APPROVE = "approve"
@@ -38,20 +42,49 @@ def parse_variance_score(audit: str) -> float:
     )
 
 
+def parse_audit_reason(audit: str) -> str:
+    payload = _extract_json_payload(audit)
+    if payload is not None:
+        reason = payload.get("reason")
+        if isinstance(reason, str):
+            return reason
+    return audit.strip()
+
+
 def _extract_variance_score_from_json(audit: str) -> float | None:
+    payload = _extract_json_payload(audit)
+    if payload is None:
+        return None
+    value = payload.get("variance_score")
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _extract_json_payload(audit: str) -> dict[str, object] | None:
     match = _JSON_OBJECT_PATTERN.search(audit)
     if match is None:
         return None
     try:
         payload = json.loads(match.group(0))
-        return float(payload["variance_score"])
-    except (KeyError, TypeError, ValueError):
+    except (TypeError, ValueError):
         return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
 
 
 class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
-    def __init__(self, llm_agent: LLMAgentPort) -> None:
+    def __init__(
+        self,
+        llm_agent: LLMAgentPort,
+        variance_threshold: float = MAX_VARIANCE_THRESHOLD,
+    ) -> None:
         self._llm_agent = llm_agent
+        self._variance_threshold = variance_threshold
         self._graph: CompiledStateGraph[SharedState] = self._build_graph()
 
     async def optimize(
@@ -66,11 +99,20 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             )
         )
 
-        return OptimizedCV(
+        optimized = OptimizedCV(
             content=final_state["optimized_text"],
             variance_score=final_state["variance_score"],
             writer_attempts=final_state["writer_attempts"],
+            variance_threshold=self._variance_threshold,
         )
+        logger.info(
+            "CV optimization finished: variance=%s attempts=%s "
+            "within_threshold=%s",
+            optimized.variance_score,
+            optimized.writer_attempts,
+            optimized.is_within_threshold(),
+        )
+        return optimized
 
     def _build_graph(self) -> CompiledStateGraph[SharedState]:
         graph: StateGraph[SharedState] = StateGraph(SharedState)
@@ -107,16 +149,34 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         return {"gap_analysis": analysis}
 
     async def _writer(self, state: SharedState) -> dict[str, object]:
+        prompt = self._writer_prompt(state)
         optimized_text = await self._llm_agent.complete(
             AgentRole.WRITER,
-            f"Job description:\n{state.job_description_text}\n"
-            f"Gaps:\n{state.gap_analysis}\n"
-            f"CV:\n{state.candidate_cv_text}",
+            prompt,
         )
         return {
             "optimized_text": optimized_text,
             "writer_attempts": state.writer_attempts + 1,
         }
+
+    def _writer_prompt(self, state: SharedState) -> str:
+        if not state.optimized_text:
+            return (
+                f"Job description:\n{state.job_description_text}\n"
+                f"Gaps:\n{state.gap_analysis}\n"
+                f"CV:\n{state.candidate_cv_text}"
+            )
+        return (
+            f"Job description:\n{state.job_description_text}\n"
+            f"Gaps:\n{state.gap_analysis}\n"
+            f"Previous optimized CV:\n{state.optimized_text}\n"
+            f"Auditor feedback (variance {state.variance_score}):\n"
+            f"{state.audit_reason}\n"
+            "Corrige específicamente las carencias señaladas por el auditor "
+            "en el CV optimizado anterior, sin inventar experiencia ni "
+            "habilidades.\n"
+            f"Original CV:\n{state.candidate_cv_text}"
+        )
 
     async def _auditor(self, state: SharedState) -> dict[str, object]:
         audit = await self._llm_agent.complete(
@@ -125,13 +185,33 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             f"Gaps:\n{state.gap_analysis}\n"
             f"Optimized CV:\n{state.optimized_text}",
         )
-        return {"variance_score": parse_variance_score(audit)}
+        variance_score = parse_variance_score(audit)
+        logger.info(
+            "Auditor attempt %s: variance=%s reason=%s",
+            state.writer_attempts,
+            variance_score,
+            parse_audit_reason(audit),
+        )
+        return {
+            "variance_score": variance_score,
+            "audit_reason": parse_audit_reason(audit),
+        }
 
     def _route_after_audit(self, state: SharedState) -> str:
-        decision = evaluate_variance(state.variance_score)
+        decision = evaluate_variance(
+            state.variance_score,
+            self._variance_threshold,
+        )
         if (
             decision is AuditDecision.RETRY
             and state.writer_attempts < MAX_WRITER_ATTEMPTS
         ):
+            logger.warning(
+                "Variance %s above threshold %s after attempt %s: retrying "
+                "the writer.",
+                state.variance_score,
+                self._variance_threshold,
+                state.writer_attempts,
+            )
             return _RETRY
         return _APPROVE

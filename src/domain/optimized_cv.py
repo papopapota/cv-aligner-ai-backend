@@ -12,6 +12,7 @@ class OptimizedCV:
     content: str
     variance_score: float
     writer_attempts: int
+    variance_threshold: float = MAX_VARIANCE_THRESHOLD
 
     def __post_init__(self) -> None:
         if not self.content.strip():
@@ -26,4 +27,4 @@ class OptimizedCV:
             )
 
     def is_within_threshold(self) -> bool:
-        return self.variance_score <= MAX_VARIANCE_THRESHOLD
+        return self.variance_score <= self.variance_threshold

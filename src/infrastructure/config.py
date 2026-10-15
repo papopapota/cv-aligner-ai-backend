@@ -1,10 +1,25 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.application.ports.out.llm_agent_port import AgentRole
+from src.domain.audit_rules import MAX_VARIANCE_THRESHOLD
+
+
+class AuditSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="AUDIT_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    variance_threshold: float = MAX_VARIANCE_THRESHOLD
 
 
 class LLMSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="LLM_", env_file=".env")
+    model_config = SettingsConfigDict(
+        env_prefix="LLM_",
+        env_file=".env",
+        extra="ignore",
+    )
 
     api_key: str = ""
     base_url: str = ""
