@@ -16,6 +16,7 @@ class SharedState:
     gap_analysis: str = ""
     optimized_text: str = ""
     variance_score: float = 1.0
+    audit_reason: str = ""
     writer_attempts: int = 0
     best_text: str = ""
     best_r_total: float = 0.0

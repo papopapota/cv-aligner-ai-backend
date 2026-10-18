@@ -19,6 +19,7 @@ from src.infrastructure.adapters.out.openai_llm_agent_adapter import (
     OpenAILLMAgentAdapter,
 )
 from src.infrastructure.config import (
+    AuditSettings,
     LLMConfigurationError,
     LLMSettings,
     MatchScoringSettings,
@@ -32,6 +33,7 @@ def build_upload_cv_use_case() -> UploadCVUseCase:
 @lru_cache(maxsize=1)
 def build_optimize_cv_use_case() -> OptimizeCVUseCase:
     settings = LLMSettings()
+    audit_settings = AuditSettings()
     if not settings.api_key:
         raise LLMConfigurationError(
             "LLM_API_KEY is not configured. Copy .env.example to .env and "
@@ -63,5 +65,6 @@ def build_optimize_cv_use_case() -> OptimizeCVUseCase:
         llm_agent,
         match_scorer=match_scorer,
         r_total_target=match_settings.target_r_total,
+        variance_threshold=audit_settings.variance_threshold,
     )
     return OptimizeCVService(orchestrator)

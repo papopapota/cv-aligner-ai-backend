@@ -14,7 +14,7 @@ def test_approves_a_score_within_the_threshold(score: float) -> None:
     assert evaluate_variance(score) is AuditDecision.APPROVED
 
 
-@pytest.mark.parametrize("score", [0.36, 0.5, 1.0])
+@pytest.mark.parametrize("score", [0.46, 0.5, 1.0])
 def test_retries_a_score_above_the_threshold(score: float) -> None:
     assert evaluate_variance(score) is AuditDecision.RETRY
 
@@ -27,6 +27,13 @@ def test_rejects_a_score_outside_the_unit_range(score: float) -> None:
 
 def test_the_threshold_is_a_valid_score() -> None:
     assert 0.0 <= MAX_VARIANCE_THRESHOLD <= 1.0
+
+
+def test_uses_a_custom_threshold() -> None:
+    assert (
+        evaluate_variance(0.6, threshold=0.7) is AuditDecision.APPROVED
+    )
+    assert evaluate_variance(0.6, threshold=0.5) is AuditDecision.RETRY
 
 
 def test_the_writer_attempt_cap_is_positive() -> None:

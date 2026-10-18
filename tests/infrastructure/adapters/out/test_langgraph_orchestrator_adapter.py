@@ -4,7 +4,7 @@ import pytest
 
 from src.application.ports.out.llm_agent_port import AgentRole
 from src.application.ports.out.match_scorer_port import MatchScorerPort
-from src.domain.audit_rules import MAX_WRITER_ATTEMPTS
+from src.domain.audit_rules import MAX_VARIANCE_THRESHOLD, MAX_WRITER_ATTEMPTS
 from src.domain.candidate_cv import CandidateCV
 from src.domain.compatibility_score import CompatibilityScore
 from src.domain.errors import InvalidUploadError
@@ -14,6 +14,7 @@ from src.domain.shared_state import SharedState
 from src.domain.uploaded_file_metadata import UploadedFileMetadata
 from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
     LangGraphOrchestratorAdapter,
+    parse_audit_reason,
     parse_semantic_profile,
     parse_variance_score,
 )
@@ -24,6 +25,7 @@ from src.infrastructure.adapters.out.stub_llm_agent_adapter import (
 _CV_TEXT = "Python backend engineer with fastapi."
 _JOB_TEXT = "Looking for a FastAPI developer."
 _GAP_TEXT = "GAP ANALYSIS: missing kubernetes and postgres depth."
+_WRITER_TEXT = "OPTIMIZED CV: python backend engineer with fastapi and postgres."
 
 
 def _candidate() -> CandidateCV:
@@ -51,13 +53,48 @@ def _job_description() -> JobDescription:
 def _orchestrator(
     variance_score: float = 0.1,
     variance_score_on_first_attempt: float | None = None,
+    variance_threshold: float = MAX_VARIANCE_THRESHOLD,
 ) -> LangGraphOrchestratorAdapter:
     return LangGraphOrchestratorAdapter(
         StubLLMAgentAdapter(
             variance_score=variance_score,
             variance_score_on_first_attempt=variance_score_on_first_attempt,
-        )
+        ),
+        variance_threshold=variance_threshold,
     )
+
+
+def _score(
+    r_total: float,
+    per_dimension: dict[str, float] | None = None,
+) -> CompatibilityScore:
+    return CompatibilityScore(
+        s_cosine=r_total,
+        d_euclidean=0.0,
+        a_contextual=0.0,
+        r_total=r_total,
+        per_dimension=per_dimension or {},
+    )
+
+
+class _FakeMatchScorer(MatchScorerPort):
+    def __init__(self, scores: list[CompatibilityScore]) -> None:
+        self._scores = list(scores)
+        self.calls: list[tuple[str, str, Mapping[str, str], Mapping[str, str]]] = []
+
+    async def match(
+        self,
+        candidate_text: str,
+        job_text: str,
+        candidate_dimensions: Mapping[str, str],
+        job_dimensions: Mapping[str, str],
+    ) -> CompatibilityScore:
+        self.calls.append(
+            (candidate_text, job_text, candidate_dimensions, job_dimensions)
+        )
+        if len(self._scores) > 1:
+            return self._scores.pop(0)
+        return self._scores[0]
 
 
 def _score(
@@ -128,6 +165,38 @@ async def test_stops_retrying_at_the_attempt_cap() -> None:
     assert not optimized.is_within_threshold()
 
 
+async def test_approves_with_a_more_permissive_threshold() -> None:
+    optimized = await _orchestrator(
+        variance_score=0.9,
+        variance_threshold=0.95,
+    ).optimize(_candidate(), _job_description())
+
+    assert optimized.writer_attempts == 1
+    assert optimized.is_within_threshold()
+
+
+async def test_the_writer_retry_receives_the_previous_cv_and_audit_reason() -> None:
+    calls: list[tuple[AgentRole, str]] = []
+
+    class _Recorder(StubLLMAgentAdapter):
+        async def complete(self, role: AgentRole, prompt: str) -> str:
+            calls.append((role, prompt))
+            return await super().complete(role, prompt)
+
+    orchestrator = LangGraphOrchestratorAdapter(
+        _Recorder(variance_score=0.1, variance_score_on_first_attempt=0.9)
+    )
+
+    await orchestrator.optimize(_candidate(), _job_description())
+
+    writer_prompts = [
+        prompt for role, prompt in calls if role is AgentRole.WRITER
+    ]
+    assert len(writer_prompts) == 2
+    assert _WRITER_TEXT in writer_prompts[1]
+    assert "VARIANCE SCORE: 0.9" in writer_prompts[1]
+
+
 async def test_runs_the_nodes_in_order() -> None:
     prompts: list[str] = []
 
@@ -182,6 +251,16 @@ def test_parses_a_integer_score_in_json() -> None:
 def test_rejects_an_audit_without_any_numeric_score() -> None:
     with pytest.raises(InvalidUploadError):
         parse_variance_score("I cannot tell")
+
+
+def test_parses_the_reason_from_a_json_audit() -> None:
+    audit = '{"variance_score": 0.4, "reason": "missing kubernetes"}'
+
+    assert parse_audit_reason(audit) == "missing kubernetes"
+
+
+def test_falls_back_to_the_raw_audit_as_reason() -> None:
+    assert parse_audit_reason("Variance below 0.20") == "Variance below 0.20"
 
 
 def test_parses_a_full_semantic_profile() -> None:

@@ -15,6 +15,7 @@ class OptimizedCV:
     content: str
     variance_score: float
     writer_attempts: int
+    variance_threshold: float = MAX_VARIANCE_THRESHOLD
     r_total: float | None = None
     per_dimension: dict[str, float] = field(default_factory=dict)
     gap_report: str = ""
@@ -43,7 +44,7 @@ class OptimizedCV:
             )
 
     def is_within_threshold(self) -> bool:
-        variance_passed = self.variance_score <= MAX_VARIANCE_THRESHOLD
+        variance_passed = self.variance_score <= self.variance_threshold
         r_total_passed = (
             self.r_total is None
             or self.r_total >= DEFAULT_R_TOTAL_TARGET

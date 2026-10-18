@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 
 from langgraph.graph import END, START, StateGraph
@@ -11,6 +12,7 @@ from src.application.ports.out.workflow_orchestrator_port import (
 )
 from src.domain.audit_rules import (
     DEFAULT_R_TOTAL_TARGET,
+    MAX_VARIANCE_THRESHOLD,
     MAX_WRITER_ATTEMPTS,
     AuditDecision,
     evaluate_variance,
@@ -22,6 +24,8 @@ from src.domain.job_description import JobDescription
 from src.domain.optimized_cv import OptimizedCV
 from src.domain.semantic_profile import SemanticProfile
 from src.domain.shared_state import SharedState
+
+logger = logging.getLogger(__name__)
 
 _RETRY = "retry"
 _APPROVE = "approve"
@@ -42,15 +46,39 @@ def parse_variance_score(audit: str) -> float:
     )
 
 
+def parse_audit_reason(audit: str) -> str:
+    payload = _extract_json_payload(audit)
+    if payload is not None:
+        reason = payload.get("reason")
+        if isinstance(reason, str):
+            return reason
+    return audit.strip()
+
+
 def _extract_variance_score_from_json(audit: str) -> float | None:
+    payload = _extract_json_payload(audit)
+    if payload is None:
+        return None
+    value = payload.get("variance_score")
+    if not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _extract_json_payload(audit: str) -> dict[str, object] | None:
     match = _JSON_OBJECT_PATTERN.search(audit)
     if match is None:
         return None
     try:
         payload = json.loads(match.group(0))
-        return float(payload["variance_score"])
-    except (KeyError, TypeError, ValueError):
+    except (TypeError, ValueError):
         return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
 
 
 def parse_semantic_profile(text: str) -> SemanticProfile:
@@ -116,12 +144,14 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
     def __init__(
         self,
         llm_agent: LLMAgentPort,
+        variance_threshold: float = MAX_VARIANCE_THRESHOLD,
         match_scorer: MatchScorerPort | None = None,
         r_total_target: float = DEFAULT_R_TOTAL_TARGET,
     ) -> None:
         self._llm_agent = llm_agent
         self._match_scorer = match_scorer
         self._r_total_target = r_total_target
+        self._variance_threshold = variance_threshold
         self._graph: CompiledStateGraph[SharedState] = self._build_graph()
 
     async def optimize(
@@ -137,21 +167,32 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         )
 
         if final_state["best_text"]:
-            return OptimizedCV(
+            optimized = OptimizedCV(
                 content=final_state["best_text"],
                 variance_score=final_state["best_variance"],
                 writer_attempts=final_state["writer_attempts"],
+                variance_threshold=self._variance_threshold,
                 r_total=final_state["best_r_total"],
                 per_dimension=final_state["best_per_dimension"],
                 gap_report=final_state["gap_analysis"],
             )
-
-        return OptimizedCV(
-            content=final_state["optimized_text"],
-            variance_score=final_state["variance_score"],
-            writer_attempts=final_state["writer_attempts"],
-            gap_report=final_state["gap_analysis"],
+        else:
+            optimized = OptimizedCV(
+                content=final_state["optimized_text"],
+                variance_score=final_state["variance_score"],
+                writer_attempts=final_state["writer_attempts"],
+                variance_threshold=self._variance_threshold,
+                gap_report=final_state["gap_analysis"],
+            )
+        logger.info(
+            "CV optimization finished: variance=%s attempts=%s "
+            "within_threshold=%s r_total=%s",
+            optimized.variance_score,
+            optimized.writer_attempts,
+            optimized.is_within_threshold(),
+            optimized.r_total,
         )
+        return optimized
 
     def _build_graph(self) -> CompiledStateGraph[SharedState]:
         graph: StateGraph[SharedState] = StateGraph(SharedState)
@@ -218,16 +259,34 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         }
 
     async def _writer(self, state: SharedState) -> dict[str, object]:
+        prompt = self._writer_prompt(state)
         optimized_text = await self._llm_agent.complete(
             AgentRole.WRITER,
-            f"Job description:\n{state.job_description_text}\n"
-            f"Gaps:\n{state.gap_analysis}\n"
-            f"CV:\n{state.candidate_cv_text}",
+            prompt,
         )
         return {
             "optimized_text": optimized_text,
             "writer_attempts": state.writer_attempts + 1,
         }
+
+    def _writer_prompt(self, state: SharedState) -> str:
+        if not state.optimized_text:
+            return (
+                f"Job description:\n{state.job_description_text}\n"
+                f"Gaps:\n{state.gap_analysis}\n"
+                f"CV:\n{state.candidate_cv_text}"
+            )
+        return (
+            f"Job description:\n{state.job_description_text}\n"
+            f"Gaps:\n{state.gap_analysis}\n"
+            f"Previous optimized CV:\n{state.optimized_text}\n"
+            f"Auditor feedback (variance {state.variance_score}):\n"
+            f"{state.audit_reason}\n"
+            "Corrige específicamente las carencias señaladas por el auditor "
+            "en el CV optimizado anterior, sin inventar experiencia ni "
+            "habilidades.\n"
+            f"Original CV:\n{state.candidate_cv_text}"
+        )
 
     async def _auditor(self, state: SharedState) -> dict[str, object]:
         audit = await self._llm_agent.complete(
@@ -237,8 +296,19 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             f"Optimized CV:\n{state.optimized_text}",
         )
         variance_score = parse_variance_score(audit)
+        audit_reason = parse_audit_reason(audit)
+        logger.info(
+            "Auditor attempt %s: variance=%s reason=%s",
+            state.writer_attempts,
+            variance_score,
+            audit_reason,
+        )
+        updates: dict[str, object] = {
+            "variance_score": variance_score,
+            "audit_reason": audit_reason,
+        }
         if self._match_scorer is None:
-            return {"variance_score": variance_score}
+            return updates
 
         candidate_profile = parse_semantic_profile(
             await self._llm_agent.complete(
@@ -254,10 +324,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             if state.job_profile is not None
             else {},
         )
-        updates: dict[str, object] = {
-            "variance_score": variance_score,
-            "optimized_match": optimized_match,
-        }
+        updates["optimized_match"] = optimized_match
         if state.best_text == "" or optimized_match.r_total > state.best_r_total:
             updates["best_text"] = state.optimized_text
             updates["best_r_total"] = optimized_match.r_total
@@ -266,7 +333,10 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         return updates
 
     def _route_after_audit(self, state: SharedState) -> str:
-        decision = evaluate_variance(state.variance_score)
+        decision = evaluate_variance(
+            state.variance_score,
+            self._variance_threshold,
+        )
         match_approved = (
             self._match_scorer is None
             or (
@@ -278,5 +348,12 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             (decision is AuditDecision.RETRY or not match_approved)
             and state.writer_attempts < MAX_WRITER_ATTEMPTS
         ):
+            logger.warning(
+                "Variance %s above threshold %s after attempt %s: retrying "
+                "the writer.",
+                state.variance_score,
+                self._variance_threshold,
+                state.writer_attempts,
+            )
             return _RETRY
         return _APPROVE
