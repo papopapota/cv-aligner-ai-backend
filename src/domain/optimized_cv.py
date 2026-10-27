@@ -18,13 +18,9 @@ class OptimizedCV:
         if not self.content.strip():
             raise InvalidUploadError("The optimized CV content is empty.")
         if not _MIN_VARIANCE_SCORE <= self.variance_score <= _MAX_VARIANCE_SCORE:
-            raise InvalidUploadError(
-                "The variance score must be between 0 and 1."
-            )
+            raise InvalidUploadError("The variance score must be between 0 and 1.")
         if self.writer_attempts < 1:
-            raise InvalidUploadError(
-                "The writer must run at least once."
-            )
+            raise InvalidUploadError("The writer must run at least once.")
 
     def is_within_threshold(self) -> bool:
         return self.variance_score <= self.variance_threshold

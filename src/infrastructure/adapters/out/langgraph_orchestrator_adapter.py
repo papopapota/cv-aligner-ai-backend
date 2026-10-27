@@ -37,9 +37,7 @@ def parse_variance_score(audit: str) -> float:
             return float(token)
         except ValueError:
             continue
-    raise InvalidUploadError(
-        "The auditor did not return a numeric variance score."
-    )
+    raise InvalidUploadError("The auditor did not return a numeric variance score.")
 
 
 def parse_audit_reason(audit: str) -> str:
@@ -106,8 +104,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             variance_threshold=self._variance_threshold,
         )
         logger.info(
-            "CV optimization finished: variance=%s attempts=%s "
-            "within_threshold=%s",
+            "CV optimization finished: variance=%s attempts=%s within_threshold=%s",
             optimized.variance_score,
             optimized.writer_attempts,
             optimized.is_within_threshold(),
@@ -143,8 +140,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
     async def _analyzer(self, state: SharedState) -> dict[str, object]:
         analysis = await self._llm_agent.complete(
             AgentRole.ANALYZER,
-            f"Job description:\n{state.job_description_text}\n"
-            f"Profile:\n{state.extracted_profile}",
+            f"Job description:\n{state.job_description_text}\nProfile:\n{state.extracted_profile}",
         )
         return {"gap_analysis": analysis}
 
@@ -202,13 +198,9 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             state.variance_score,
             self._variance_threshold,
         )
-        if (
-            decision is AuditDecision.RETRY
-            and state.writer_attempts < MAX_WRITER_ATTEMPTS
-        ):
+        if decision is AuditDecision.RETRY and state.writer_attempts < MAX_WRITER_ATTEMPTS:
             logger.warning(
-                "Variance %s above threshold %s after attempt %s: retrying "
-                "the writer.",
+                "Variance %s above threshold %s after attempt %s: retrying the writer.",
                 state.variance_score,
                 self._variance_threshold,
                 state.writer_attempts,

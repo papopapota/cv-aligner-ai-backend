@@ -18,6 +18,10 @@ dependencies = [
     "python-docx>=1.2.0",
     "python-multipart>=0.0.32",
     "uvicorn>=0.54.0",
+    "asyncpg>=0.29.0",
+    "bcrypt>=5.0.0",
+    "pyjwt>=2.15.1",
+    "email-validator>=2.3.0",
 ]
 
 [build-system]
@@ -55,3 +59,6 @@ ignore = ["B008"]
 python_version = "3.12"
 strict = true
 exclude = ["^\\.venv/"]
+[[tool.mypy.overrides]]
+module = ["asyncpg"]
+ignore_missing_imports = true
