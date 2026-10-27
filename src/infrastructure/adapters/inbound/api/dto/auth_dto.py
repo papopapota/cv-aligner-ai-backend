@@ -12,7 +12,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
 
-    class Config:
+    class ConfigDict:
         json_schema_extra = {
             "example": {
                 "name": "Juan Perez",
@@ -27,7 +27,7 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
-    class Config:
+    class ConfigDict:
         json_schema_extra = {
             "example": {
                 "email": "juan@example.com",
@@ -43,7 +43,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     created_at: datetime
 
-    class Config:
+    class ConfigDict:
         from_attributes = True
         json_schema_extra = {
             "example": {
@@ -62,7 +62,7 @@ class TokenResponse(BaseModel):
     expires_in: int
     refresh_token: str | None = None
 
-    class Config:
+    class ConfigDict:
         json_schema_extra = {
             "example": {
                 "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
