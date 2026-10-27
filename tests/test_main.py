@@ -22,7 +22,7 @@ async def test_health_check_returns_ok(client: AsyncClient) -> None:
 def test_the_openapi_exposes_every_route() -> None:
     paths = app.openapi()["paths"]
 
-    assert sorted(paths) == ["/cv/optimize", "/cv/upload", "/health"]
+    assert sorted(paths) == ["/cv/optimize", "/cv/upload", "/health", "/login", "/refresh", "/register"]
 
 
 def test_the_optimize_route_is_declared_as_multipart() -> None:
