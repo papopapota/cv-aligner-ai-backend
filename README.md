@@ -146,14 +146,16 @@ src/
 ├── application/
 │   ├── ports/
 │   │   ├── inbound/            # Interfaces de casos de uso
-│   │   └── out/                # Interfaces abstractas (ABC) de parsers, orquestador, LLM y exporters
+│   │   └── out/                # Interfaces abstractas (ABC) de parsers, orquestador, LLM, scorer y exporter
 │   └── services/               # Implementación de los casos de uso
 └── infrastructure/
     └── adapters/
         ├── inbound/
         │   └── api/                # Controladores FastAPI, routers y DTOs
-        └── out/                   # Implementaciones de los puertos de salida (SDK openai, LangGraph, parsers)
+        └── out/                   # Implementaciones de los puertos de salida (SDK openai, LangGraph, parsers, scorer)
 ```
+
+`ports/out/` incluye `DocumentExporterPort` (y `VectorStorePort`), pero aún **no tienen adaptador** en `adapters/out/` ni cableado en `composition.py`: son parte de la arquitectura objetivo.
 
 `ports/inbound/` no se llama `ports/in/` porque `in` es una palabra reservada en Python y no se puede importar de forma estática.
 
