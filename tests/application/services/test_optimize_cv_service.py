@@ -90,9 +90,7 @@ async def test_does_not_export_when_the_audit_fails() -> None:
 
 
 async def test_raises_when_the_variance_stays_above_the_threshold() -> None:
-    service, _, _ = _service(
-        _optimized_cv(variance_score=MAX_VARIANCE_THRESHOLD + 0.01)
-    )
+    service, _, _ = _service(_optimized_cv(variance_score=MAX_VARIANCE_THRESHOLD + 0.01))
     candidate = _candidate()
     job_description = _job_description()
 
@@ -101,9 +99,7 @@ async def test_raises_when_the_variance_stays_above_the_threshold() -> None:
 
 
 async def test_the_failure_message_reports_the_attempts() -> None:
-    service, _, _ = _service(
-        _optimized_cv(variance_score=0.9, writer_attempts=3)
-    )
+    service, _, _ = _service(_optimized_cv(variance_score=0.9, writer_attempts=3))
     candidate = _candidate()
     job_description = _job_description()
 

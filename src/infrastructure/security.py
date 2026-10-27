@@ -3,9 +3,8 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from bcrypt import hashpw, gensalt, checkpw
-from jwt import encode, decode
-from pydantic import BaseModel
+from bcrypt import checkpw, gensalt, hashpw
+from jwt import decode, encode
 
 
 class SecuritySettings:

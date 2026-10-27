@@ -51,9 +51,7 @@ def test_rejects_a_writer_that_never_ran(attempts: int) -> None:
 
 def test_is_within_the_threshold() -> None:
     assert _optimized_cv(variance_score=MAX_VARIANCE_THRESHOLD).is_within_threshold()
-    assert not _optimized_cv(
-        variance_score=MAX_VARIANCE_THRESHOLD + 0.01
-    ).is_within_threshold()
+    assert not _optimized_cv(variance_score=MAX_VARIANCE_THRESHOLD + 0.01).is_within_threshold()
 
 
 def test_uses_a_custom_threshold() -> None:

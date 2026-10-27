@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from pydantic import BaseModel, EmailStr
 
@@ -21,6 +21,7 @@ class RegisterRequest(BaseModel):
             }
         }
 
+
 class LoginRequest(BaseModel):
     """Request schema for user login."""
 
@@ -34,6 +35,7 @@ class LoginRequest(BaseModel):
                 "password": "securepassword123",
             }
         }
+
 
 class UserResponse(BaseModel):
     """Response schema for user data."""
@@ -53,6 +55,7 @@ class UserResponse(BaseModel):
                 "created_at": "2024-01-15T10:30:00Z",
             }
         }
+
 
 class TokenResponse(BaseModel):
     """Response schema for authentication token."""

@@ -1,11 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 
-from src.infrastructure.security import hash_password, verify_password, create_access_token, decode_access_token, SecuritySettings
-from src.infrastructure.adapters.inbound.api.dto.auth_dto import RegisterRequest, LoginRequest, UserResponse, TokenResponse
 from src.application.ports.out.user_port import UserRepositoryPort
+from src.infrastructure.adapters.inbound.api.dto.auth_dto import (
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
 from src.infrastructure.adapters.out.repositories.user_repository import AsyncpgUserRepository
-
+from src.infrastructure.security import (
+    SecuritySettings,
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    verify_password,
+)
 
 router = APIRouter(tags=["auth"])
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncpg
-from datetime import datetime
 
 from src.application.ports.out.user_port import UserRepositoryPort
 from src.domain.entities.user import User
@@ -18,9 +17,7 @@ class AsyncpgUserRepository(UserRepositoryPort):
             dsn: Database connection string. If None, uses environment variables:
                 DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
         """
-        self._dsn = dsn or (
-            "postgresql://postgres:postgresql@localhost:5432/cvaligner"
-        )
+        self._dsn = dsn or ("postgresql://postgres:postgresql@localhost:5432/cvaligner")
 
     async def _get_connection(self) -> asyncpg.Connection:
         return await asyncpg.connect(self._dsn)

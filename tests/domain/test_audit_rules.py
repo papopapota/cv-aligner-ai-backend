@@ -30,9 +30,7 @@ def test_the_threshold_is_a_valid_score() -> None:
 
 
 def test_uses_a_custom_threshold() -> None:
-    assert (
-        evaluate_variance(0.6, threshold=0.7) is AuditDecision.APPROVED
-    )
+    assert evaluate_variance(0.6, threshold=0.7) is AuditDecision.APPROVED
     assert evaluate_variance(0.6, threshold=0.5) is AuditDecision.RETRY
 
 
