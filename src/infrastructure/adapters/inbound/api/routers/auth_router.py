@@ -130,7 +130,7 @@ async def refresh_token(
     """
     try:
         decoded = decode_access_token(token)
-        email: str = decoded.get("sub")
+        email = decoded.get("sub")
         if email is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

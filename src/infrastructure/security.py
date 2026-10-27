@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from bcrypt import checkpw, gensalt, hashpw
 from jwt import decode, encode
@@ -83,7 +84,7 @@ def decode_access_token(
     token: str,
     algorithm: str = settings.algorithm,
     secret_key: str = settings.secret_key,
-) -> dict:
+) -> dict[str, Any]:
     """
     Decode a JWT access token.
 
