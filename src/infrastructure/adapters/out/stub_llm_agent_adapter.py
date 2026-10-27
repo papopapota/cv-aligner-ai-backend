@@ -13,9 +13,11 @@ class StubLLMAgentAdapter(LLMAgentPort):
         self,
         variance_score: float = 0.1,
         variance_score_on_first_attempt: float | None = None,
+        original_variance_score: float = 0.8,
     ) -> None:
         self._variance_score = variance_score
         self._variance_score_on_first_attempt = variance_score_on_first_attempt
+        self._original_variance_score = original_variance_score
 
     async def complete(self, role: AgentRole, prompt: str) -> str:
         if role is AgentRole.EXTRACTOR:
@@ -24,6 +26,10 @@ class StubLLMAgentAdapter(LLMAgentPort):
             return _ANALYZER_RESPONSE
         if role is AgentRole.WRITER:
             return _WRITER_RESPONSE
+        if "Original CV:" in prompt:
+            return _AUDITOR_RESPONSE.format(
+                variance_score=self._original_variance_score
+            )
         if self._variance_score_on_first_attempt is not None:
             score = self._variance_score_on_first_attempt
             self._variance_score_on_first_attempt = None

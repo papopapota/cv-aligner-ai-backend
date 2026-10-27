@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from src.application.ports.out.llm_agent_port import AgentRole
@@ -46,12 +48,14 @@ def _job_description() -> JobDescription:
 def _orchestrator(
     variance_score: float = 0.1,
     variance_score_on_first_attempt: float | None = None,
+    original_variance_score: float = 0.8,
     variance_threshold: float = MAX_VARIANCE_THRESHOLD,
 ) -> LangGraphOrchestratorAdapter:
     return LangGraphOrchestratorAdapter(
         StubLLMAgentAdapter(
             variance_score=variance_score,
             variance_score_on_first_attempt=variance_score_on_first_attempt,
+            original_variance_score=original_variance_score,
         ),
         variance_threshold=variance_threshold,
     )
@@ -63,7 +67,8 @@ async def test_runs_the_whole_graph_and_approves_a_low_variance() -> None:
         _job_description(),
     )
 
-    assert optimized.variance_score == 0.1
+    assert optimized.original_variance_score == 0.8
+    assert optimized.optimized_variance_score == 0.1
     assert optimized.writer_attempts == 1
     assert optimized.is_within_threshold()
     assert optimized.content
@@ -76,7 +81,7 @@ async def test_retries_the_writer_once_when_the_variance_is_high() -> None:
     ).optimize(_candidate(), _job_description())
 
     assert optimized.writer_attempts == 2
-    assert optimized.variance_score == 0.1
+    assert optimized.optimized_variance_score == 0.1
 
 
 async def test_stops_retrying_at_the_attempt_cap() -> None:
@@ -86,6 +91,8 @@ async def test_stops_retrying_at_the_attempt_cap() -> None:
     )
 
     assert optimized.writer_attempts == MAX_WRITER_ATTEMPTS
+    assert optimized.original_variance_score == 0.8
+    assert optimized.optimized_variance_score == 0.9
     assert not optimized.is_within_threshold()
 
 
@@ -121,24 +128,105 @@ async def test_the_writer_retry_receives_the_previous_cv_and_audit_reason() -> N
     assert "VARIANCE SCORE: 0.9" in writer_prompts[1]
 
 
-async def test_runs_the_nodes_in_order() -> None:
-    prompts: list[str] = []
+async def test_runs_the_nodes_with_the_expected_dependencies() -> None:
+    calls: list[tuple[AgentRole, str]] = []
 
     class _Recorder(StubLLMAgentAdapter):
         async def complete(self, role: AgentRole, prompt: str) -> str:
-            prompts.append(prompt)
+            calls.append((role, prompt))
             return await super().complete(role, prompt)
 
     orchestrator = LangGraphOrchestratorAdapter(_Recorder(variance_score=0.1))
 
     await orchestrator.optimize(_candidate(), _job_description())
 
-    assert len(prompts) == 4
-    assert _CV_TEXT in prompts[0]
-    assert _JOB_TEXT in prompts[1]
-    assert _JOB_TEXT in prompts[2]
-    assert _JOB_TEXT in prompts[3]
-    assert _GAP_TEXT in prompts[3]
+    extractor = next(
+        (role, prompt)
+        for role, prompt in calls
+        if role is AgentRole.EXTRACTOR
+    )
+    analyzer = next(
+        (role, prompt) for role, prompt in calls if role is AgentRole.ANALYZER
+    )
+    original_auditor = next(
+        (role, prompt)
+        for role, prompt in calls
+        if role is AgentRole.AUDITOR and "Original CV:" in prompt
+    )
+    writer = next(
+        (role, prompt) for role, prompt in calls if role is AgentRole.WRITER
+    )
+    optimized_auditor = next(
+        (role, prompt)
+        for role, prompt in calls
+        if role is AgentRole.AUDITOR and "Optimized CV:" in prompt
+    )
+
+    assert calls.index(extractor) < calls.index(analyzer)
+    assert calls.index(extractor) < calls.index(writer)
+    assert calls.index(analyzer) < calls.index(writer)
+    assert calls.index(original_auditor) < calls.index(writer)
+    assert calls.index(writer) < calls.index(optimized_auditor)
+
+    assert _CV_TEXT in extractor[1]
+    assert _JOB_TEXT in analyzer[1]
+    assert _JOB_TEXT in original_auditor[1]
+    assert _CV_TEXT in original_auditor[1]
+    assert _JOB_TEXT in writer[1]
+    assert _GAP_TEXT in writer[1]
+    assert _JOB_TEXT in optimized_auditor[1]
+    assert _GAP_TEXT in optimized_auditor[1]
+
+
+async def test_the_original_audit_runs_concurrently_with_extraction() -> None:
+    barrier = asyncio.Barrier(2)
+
+    class _Concurrent(StubLLMAgentAdapter):
+        async def complete(self, role: AgentRole, prompt: str) -> str:
+            is_original_audit = role is AgentRole.AUDITOR and "Original CV:" in prompt
+            if role is AgentRole.EXTRACTOR or is_original_audit:
+                await asyncio.wait_for(barrier.wait(), timeout=2)
+            return await super().complete(role, prompt)
+
+    orchestrator = LangGraphOrchestratorAdapter(_Concurrent(variance_score=0.1))
+
+    optimized = await orchestrator.optimize(_candidate(), _job_description())
+
+    assert optimized.original_variance_score == 0.8
+    assert optimized.writer_attempts == 1
+
+
+async def test_the_original_cv_is_audited_once_before_writing() -> None:
+    calls: list[tuple[AgentRole, str]] = []
+
+    class _Recorder(StubLLMAgentAdapter):
+        async def complete(self, role: AgentRole, prompt: str) -> str:
+            calls.append((role, prompt))
+            return await super().complete(role, prompt)
+
+    orchestrator = LangGraphOrchestratorAdapter(
+        _Recorder(
+            variance_score=0.1,
+            variance_score_on_first_attempt=0.9,
+            original_variance_score=0.7,
+        )
+    )
+
+    optimized = await orchestrator.optimize(_candidate(), _job_description())
+
+    original_audits = [
+        prompt
+        for role, prompt in calls
+        if role is AgentRole.AUDITOR and "Original CV:" in prompt
+    ]
+    optimized_audits = [
+        prompt
+        for role, prompt in calls
+        if role is AgentRole.AUDITOR and "Optimized CV:" in prompt
+    ]
+    assert len(original_audits) == 1
+    assert len(optimized_audits) == 2
+    assert optimized.original_variance_score == 0.7
 
 
 async def test_rejects_an_audit_without_a_numeric_score() -> None:
