@@ -23,7 +23,7 @@ flowchart TB
         end
 
         subgraph Domain["NÚCLEO DE DOMINIO"]
-            State["SharedState / Context<br/>(Estado Global)"]
+            State["SharedState / Context<br/>(original_variance_score,<br/>optimized_variance_score)"]
             AuditRules["Reglas de Auditoría<br/>(Filtro de Varianza)"]
             Entities["Entidades:<br/>CandidateCV, JobDescription, OptimizedCV"]
         end
@@ -56,11 +56,14 @@ flowchart TB
             LG_Engine["LangGraph StateGraph Engine"]
             NodeExt["Nodo: Agente Extractor"]
             NodeAna["Nodo: Agente Analizador"]
+            NodeOrigAud["Nodo: Auditor CV Original"]
             NodeWri["Nodo: Agente Redactor"]
-            NodeAud["Nodo: Agente Auditor"]
+            NodeAud["Nodo: Auditor CV Optimizado"]
             EdgeCond{"Filtro de Varianza<br/>(Retry / Approved)"}
 
-            LG_Engine --> NodeExt --> NodeAna --> NodeWri --> NodeAud --> EdgeCond
+            LG_Engine --> NodeExt --> NodeAna --> NodeWri
+            LG_Engine --> NodeOrigAud --> NodeWri
+            NodeWri --> NodeAud --> EdgeCond
             EdgeCond -- "Retry" --> NodeWri
         end
 
@@ -90,8 +93,9 @@ flowchart TB
     %% Interacciones de los Nodos de Infraestructura con Servicios Externos
     NodeExt -. Usa .-> LLM_API
     NodeAna -. Usa .-> LLM_API
+    NodeOrigAud -. Evalúa CV original .-> LLM_API
     NodeWri -. Contexto RAG .-> VDB
     NodeWri -. Genera borrador .-> LLM_API
-    NodeAud -. Evalúa .-> LLM_API
+    NodeAud -. Evalúa CV optimizado .-> LLM_API
     EdgeCond -- "Approved" --> DocGen
 ```

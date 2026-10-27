@@ -74,7 +74,7 @@ Copia `.env.example` a `.env` (el `.env` no se commitea):
 | `LLM_TIMEOUT_SECONDS` | Timeout por llamada en segundos. |
 | `AUDIT_VARIANCE_THRESHOLD` | Umbral de varianza del auditor (0..1, default 0.45). Por encima, el writer se reintenta. |
 
-El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extractor/analyzer/writer/auditor) con temperatura distinta por rol. El auditor responde JSON `{"variance_score": …}` y, si no, el grafo intenta parsear el primer número del texto como fallback.
+El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extractor/analyzer/writer/auditor) con temperatura distinta por rol. El auditor evalúa tanto el CV original como el optimizado y responde JSON `{"variance_score": …}`; si no, el grafo intenta parsear el primer número del texto como fallback. El primer score se calcula una sola vez en paralelo con las fases de extracción y análisis, y el segundo se recalcula en cada intento del auditor.
 
 En cada reintento el writer recibe el CV optimizado anterior y el motivo (`reason`) del auditor para corregir las carencias señaladas. El adaptador registra por log el `variance_score` y el `reason` de cada intento (nivel INFO/WARNING) para diagnosticar por qué no converge.
 
@@ -90,14 +90,14 @@ Ambos endpoints reciben los mismos dos campos multipart (`cv_file` y `job_descri
 
 ### Contrato de `POST /cv/optimize`
 
-Ejecuta el grafo de LangGraph (extractor → analyzer → writer → auditor). Si la varianza del auditor supera el umbral, el writer se reintenta hasta 3 veces.
+Ejecuta el grafo de LangGraph: la cadena `extractor → analyzer` corre en paralelo con el auditor del CV original, y el writer espera a ambas ramas para continuar. El score del CV original se calcula una sola vez y solo se informa; si la varianza del CV optimizado supera el umbral, el writer se reintenta hasta 3 intentos totales.
 
 | Campo         | Extensiones     |
 | ------------- | --------------- |
 | `cv_file`     | `.pdf`, `.docx` |
 | `job_description_file` | `.txt`  |
 
-Respuesta: `optimized_content`, `variance_score`, `writer_attempts` e `is_within_threshold`.
+Respuesta: `optimized_content`, `original_variance_score`, `optimized_variance_score`, `writer_attempts` e `is_within_threshold`. `is_within_threshold` se calcula únicamente con `optimized_variance_score`.
 
 Si el CV no converge tras los reintentos, devuelve `422` con el detalle del fallo de auditoría. `400` para formatos o tamaños inválidos, `422` si falta un campo.
 
