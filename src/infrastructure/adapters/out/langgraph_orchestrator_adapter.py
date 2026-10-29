@@ -99,13 +99,16 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
 
         optimized = OptimizedCV(
             content=final_state["optimized_text"],
-            variance_score=final_state["variance_score"],
+            original_variance_score=final_state["original_variance_score"],
+            optimized_variance_score=final_state["optimized_variance_score"],
             writer_attempts=final_state["writer_attempts"],
             variance_threshold=self._variance_threshold,
         )
         logger.info(
-            "CV optimization finished: variance=%s attempts=%s within_threshold=%s",
-            optimized.variance_score,
+            "CV optimization finished: original_variance=%s "
+            "optimized_variance=%s attempts=%s within_threshold=%s",
+            optimized.original_variance_score,
+            optimized.optimized_variance_score,
             optimized.writer_attempts,
             optimized.is_within_threshold(),
         )
@@ -115,12 +118,14 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         graph: StateGraph[SharedState] = StateGraph(SharedState)
         graph.add_node("extractor", self._extractor)
         graph.add_node("analyzer", self._analyzer)
+        graph.add_node("original_auditor", self._original_auditor)
         graph.add_node("writer", self._writer)
         graph.add_node("auditor", self._auditor)
 
         graph.add_edge(START, "extractor")
+        graph.add_edge(START, "original_auditor")
         graph.add_edge("extractor", "analyzer")
-        graph.add_edge("analyzer", "writer")
+        graph.add_edge(["analyzer", "original_auditor"], "writer")
         graph.add_edge("writer", "auditor")
         graph.add_conditional_edges(
             "auditor",
@@ -144,6 +149,20 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         )
         return {"gap_analysis": analysis}
 
+    async def _original_auditor(self, state: SharedState) -> dict[str, object]:
+        audit = await self._llm_agent.complete(
+            AgentRole.AUDITOR,
+            f"Job description:\n{state.job_description_text}\n"
+            f"Original CV:\n{state.candidate_cv_text}",
+        )
+        original_variance_score = parse_variance_score(audit)
+        logger.info(
+            "Original CV audit: variance=%s reason=%s",
+            original_variance_score,
+            parse_audit_reason(audit),
+        )
+        return {"original_variance_score": original_variance_score}
+
     async def _writer(self, state: SharedState) -> dict[str, object]:
         prompt = self._writer_prompt(state)
         optimized_text = await self._llm_agent.complete(
@@ -166,7 +185,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             f"Job description:\n{state.job_description_text}\n"
             f"Gaps:\n{state.gap_analysis}\n"
             f"Previous optimized CV:\n{state.optimized_text}\n"
-            f"Auditor feedback (variance {state.variance_score}):\n"
+            f"Auditor feedback (variance {state.optimized_variance_score}):\n"
             f"{state.audit_reason}\n"
             "Corrige específicamente las carencias señaladas por el auditor "
             "en el CV optimizado anterior, sin inventar experiencia ni "
@@ -181,27 +200,29 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             f"Gaps:\n{state.gap_analysis}\n"
             f"Optimized CV:\n{state.optimized_text}",
         )
-        variance_score = parse_variance_score(audit)
+        optimized_variance_score = parse_variance_score(audit)
+        audit_reason = parse_audit_reason(audit)
         logger.info(
             "Auditor attempt %s: variance=%s reason=%s",
             state.writer_attempts,
-            variance_score,
-            parse_audit_reason(audit),
+            optimized_variance_score,
+            audit_reason,
         )
         return {
-            "variance_score": variance_score,
-            "audit_reason": parse_audit_reason(audit),
+            "optimized_variance_score": optimized_variance_score,
+            "audit_reason": audit_reason,
         }
 
     def _route_after_audit(self, state: SharedState) -> str:
         decision = evaluate_variance(
-            state.variance_score,
+            state.optimized_variance_score,
             self._variance_threshold,
         )
         if decision is AuditDecision.RETRY and state.writer_attempts < MAX_WRITER_ATTEMPTS:
             logger.warning(
-                "Variance %s above threshold %s after attempt %s: retrying the writer.",
-                state.variance_score,
+                "Variance %s above threshold %s after attempt %s: retrying "
+                "the writer.",
+                state.optimized_variance_score,
                 self._variance_threshold,
                 state.writer_attempts,
             )

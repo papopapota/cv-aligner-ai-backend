@@ -23,8 +23,8 @@ _SYSTEM_PROMPTS: dict[AgentRole, str] = {
         "original."
     ),
     AgentRole.AUDITOR: (
-        "Evalúa cuánto difiere todavía el CV optimizado respecto a la "
-        "descripción del puesto. Responde ÚNICAMENTE con un JSON de la forma "
+        "Evalúa cuánto difiere el CV recibido respecto a la descripción del "
+        "puesto. Responde ÚNICAMENTE con un JSON de la forma "
         '{"variance_score": <float 0..1>, "reason": "<texto breve>"}. '
         "Un variance_score alto significa que quedan carencias "
         "significativas."

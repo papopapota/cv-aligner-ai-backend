@@ -38,12 +38,14 @@ def _job_description() -> JobDescription:
 
 def _optimized_cv(
     content: str = "Optimized CV body",
-    variance_score: float = 0.1,
+    original_variance_score: float = 0.8,
+    optimized_variance_score: float = 0.1,
     writer_attempts: int = 1,
 ) -> OptimizedCV:
     return OptimizedCV(
         content=content,
-        variance_score=variance_score,
+        original_variance_score=original_variance_score,
+        optimized_variance_score=optimized_variance_score,
         writer_attempts=writer_attempts,
     )
 
@@ -79,7 +81,7 @@ async def test_exports_the_optimized_cv() -> None:
 
 
 async def test_does_not_export_when_the_audit_fails() -> None:
-    service, _, exporter = _service(_optimized_cv(variance_score=0.9))
+    service, _, exporter = _service(_optimized_cv(optimized_variance_score=0.9))
     candidate = _candidate()
     job_description = _job_description()
 
@@ -90,7 +92,11 @@ async def test_does_not_export_when_the_audit_fails() -> None:
 
 
 async def test_raises_when_the_variance_stays_above_the_threshold() -> None:
-    service, _, _ = _service(_optimized_cv(variance_score=MAX_VARIANCE_THRESHOLD + 0.01))
+    service, _, _ = _service(
+        _optimized_cv(
+            optimized_variance_score=MAX_VARIANCE_THRESHOLD + 0.01
+        )
+    )
     candidate = _candidate()
     job_description = _job_description()
 
@@ -98,8 +104,20 @@ async def test_raises_when_the_variance_stays_above_the_threshold() -> None:
         await service.execute(candidate, job_description)
 
 
+async def test_does_not_fail_when_only_the_original_variance_is_high() -> None:
+    service, _, _ = _service(_optimized_cv(original_variance_score=0.9))
+    candidate = _candidate()
+    job_description = _job_description()
+
+    result = await service.execute(candidate, job_description)
+
+    assert result.original_variance_score == 0.9
+
+
 async def test_the_failure_message_reports_the_attempts() -> None:
-    service, _, _ = _service(_optimized_cv(variance_score=0.9, writer_attempts=3))
+    service, _, _ = _service(
+        _optimized_cv(optimized_variance_score=0.9, writer_attempts=3)
+    )
     candidate = _candidate()
     job_description = _job_description()
 
@@ -116,4 +134,4 @@ async def test_works_without_an_exporter() -> None:
 
     result = await service.execute(candidate, job_description)
 
-    assert result.variance_score == 0.1
+    assert result.optimized_variance_score == 0.1

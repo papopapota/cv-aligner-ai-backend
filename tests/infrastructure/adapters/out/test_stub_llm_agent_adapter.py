@@ -21,6 +21,37 @@ async def test_returns_the_configured_variance_on_the_auditor() -> None:
     assert "0.42" in response
 
 
+async def test_returns_the_configured_original_variance_for_the_original_cv() -> None:
+    adapter = StubLLMAgentAdapter(original_variance_score=0.65)
+
+    response = await adapter.complete(
+        AgentRole.AUDITOR,
+        "Job description:\npython\nOriginal CV:\npython",
+    )
+
+    assert "0.65" in response
+
+
+async def test_the_original_audit_does_not_consume_the_first_attempt_variance() -> None:
+    adapter = StubLLMAgentAdapter(
+        variance_score=0.1,
+        variance_score_on_first_attempt=0.9,
+        original_variance_score=0.7,
+    )
+
+    original = await adapter.complete(
+        AgentRole.AUDITOR,
+        "Job description:\npython\nOriginal CV:\npython",
+    )
+    optimized = await adapter.complete(
+        AgentRole.AUDITOR,
+        "Job description:\npython\nOptimized CV:\npython",
+    )
+
+    assert "0.7" in original
+    assert "0.9" in optimized
+
+
 async def test_uses_the_first_attempt_variance_once_then_falls_back() -> None:
     adapter = StubLLMAgentAdapter(
         variance_score=0.1,

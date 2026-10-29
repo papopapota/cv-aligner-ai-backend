@@ -45,7 +45,8 @@ async def optimize_cv(
 
     return CVOptimizeResponse(
         optimized_content=optimized.content,
-        variance_score=optimized.variance_score,
+        original_variance_score=optimized.original_variance_score,
+        optimized_variance_score=optimized.optimized_variance_score,
         writer_attempts=optimized.writer_attempts,
         is_within_threshold=optimized.is_within_threshold(),
     )
