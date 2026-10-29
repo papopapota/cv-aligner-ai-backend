@@ -120,9 +120,7 @@ async def test_the_writer_retry_receives_the_previous_cv_and_audit_reason() -> N
 
     await orchestrator.optimize(_candidate(), _job_description())
 
-    writer_prompts = [
-        prompt for role, prompt in calls if role is AgentRole.WRITER
-    ]
+    writer_prompts = [prompt for role, prompt in calls if role is AgentRole.WRITER]
     assert len(writer_prompts) == 2
     assert _WRITER_TEXT in writer_prompts[1]
     assert "VARIANCE SCORE: 0.9" in writer_prompts[1]

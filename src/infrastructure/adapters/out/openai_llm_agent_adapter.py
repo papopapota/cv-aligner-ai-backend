@@ -69,14 +69,12 @@ class OpenAILLMAgentAdapter(LLMAgentPort):
             )
         except APIError as exc:
             raise LLMError(
-                f"LLM call failed for role '{role.value}' on model "
-                f"'{self._model}': {exc}"
+                f"LLM call failed for role '{role.value}' on model '{self._model}': {exc}"
             ) from exc
 
         content = response.choices[0].message.content
         if not content:
             raise LLMError(
-                f"LLM returned no content for role '{role.value}' "
-                f"on model '{self._model}'."
+                f"LLM returned no content for role '{role.value}' on model '{self._model}'."
             )
         return content

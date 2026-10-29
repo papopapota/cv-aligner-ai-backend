@@ -16,9 +16,7 @@ def evaluate_variance(
     threshold: float = MAX_VARIANCE_THRESHOLD,
 ) -> AuditDecision:
     if not 0.0 <= variance_score <= 1.0:
-        raise InvalidUploadError(
-            "The variance score must be between 0 and 1."
-        )
+        raise InvalidUploadError("The variance score must be between 0 and 1.")
     if variance_score <= threshold:
         return AuditDecision.APPROVED
     return AuditDecision.RETRY

@@ -54,9 +54,7 @@ def _blank_pdf_bytes() -> bytes:
 
 @pytest.fixture(autouse=True)
 def _stub_the_use_case() -> Generator[None, None, None]:
-    app.dependency_overrides[get_upload_cv_use_case] = lambda: UploadCVService(
-        _StubParser()
-    )
+    app.dependency_overrides[get_upload_cv_use_case] = lambda: UploadCVService(_StubParser())
     yield
     app.dependency_overrides.clear()
 

@@ -127,10 +127,8 @@ async def test_optimize_requires_both_files(client: AsyncClient) -> None:
 async def test_optimize_returns_422_when_the_variance_never_converges(
     client: AsyncClient,
 ) -> None:
-    app.dependency_overrides[build_optimize_cv_use_case] = lambda: (
-        OptimizeCVService(
-            LangGraphOrchestratorAdapter(StubLLMAgentAdapter(variance_score=0.9))
-        )
+    app.dependency_overrides[build_optimize_cv_use_case] = lambda: OptimizeCVService(
+        LangGraphOrchestratorAdapter(StubLLMAgentAdapter(variance_score=0.9))
     )
 
     response = await client.post(

@@ -1,8 +1,6 @@
 from src.application.ports.out.llm_agent_port import AgentRole, LLMAgentPort
 
-_EXTRACTOR_RESPONSE = (
-    "EXTRACTED PROFILE: backend engineer with python and fastapi experience."
-)
+_EXTRACTOR_RESPONSE = "EXTRACTED PROFILE: backend engineer with python and fastapi experience."
 _ANALYZER_RESPONSE = "GAP ANALYSIS: missing kubernetes and postgres depth."
 _WRITER_RESPONSE = "OPTIMIZED CV: python backend engineer with fastapi and postgres."
 _AUDITOR_RESPONSE = "VARIANCE SCORE: {variance_score}"

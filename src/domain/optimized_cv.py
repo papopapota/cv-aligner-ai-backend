@@ -37,9 +37,7 @@ class OptimizedCV:
                 "The optimized variance score must be between 0 and 1."
             )
         if self.writer_attempts < 1:
-            raise InvalidUploadError(
-                "The writer must run at least once."
-            )
+            raise InvalidUploadError("The writer must run at least once.")
 
     def is_within_threshold(self) -> bool:
         return self.optimized_variance_score <= self.variance_threshold
