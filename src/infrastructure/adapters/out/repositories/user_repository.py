@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import asyncpg
 
 from src.application.ports.out.user_port import UserRepositoryPort
@@ -14,10 +16,18 @@ class AsyncpgUserRepository(UserRepositoryPort):
         Initialize the repository.
 
         Args:
-            dsn: Database connection string. If None, uses environment variables:
+            dsn: Database connection string. If None, constructs from environment variables:
                 DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
         """
-        self._dsn = dsn or ("postgresql://postgres:postgresql@localhost:5432/cvaligner")
+        if dsn is not None:
+            self._dsn = dsn
+        else:
+            host = os.getenv("DB_HOST", "localhost")
+            port = os.getenv("DB_PORT", "5432")
+            name = os.getenv("DB_NAME", "cvaligner")
+            user = os.getenv("DB_USER", "postgres")
+            password = os.getenv("DB_PASSWORD", "postgresql")
+            self._dsn = f"postgresql://{user}:{password}@{host}:{port}/{name}"
 
     async def _get_connection(self) -> asyncpg.Connection:
         return await asyncpg.connect(self._dsn)
