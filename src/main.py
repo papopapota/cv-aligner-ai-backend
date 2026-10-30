@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.composition import build_optimize_cv_use_case
 from src.domain.errors import AuditFailedError, InvalidUploadError
@@ -36,11 +37,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 app.add_exception_handler(InvalidUploadError, handle_invalid_upload)
 app.add_exception_handler(AuditFailedError, handle_audit_failure)
 app.include_router(cv_router)
 app.include_router(cv_optimize_router)
-app.include_router(auth_router)
+app.include_router(auth_router, prefix="/auth")
 
 
 @app.get("/health")
