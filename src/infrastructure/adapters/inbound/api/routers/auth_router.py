@@ -1,13 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.ports.out.user_port import UserRepositoryPort
+from src.domain.errors import UserAlreadyExistsError
 from src.infrastructure.adapters.inbound.api.dto.auth_dto import (
     LoginRequest,
     RegisterRequest,
     TokenResponse,
     UserResponse,
 )
-from src.infrastructure.adapters.out.repositories.user_repository import AsyncpgUserRepository
+from src.infrastructure.adapters.out.repositories.user_repository import (
+    SQLAlchemyUserRepository,
+)
+from src.infrastructure.database import get_session
 from src.infrastructure.security import (
     SecuritySettings,
     create_access_token,
@@ -20,8 +25,10 @@ router = APIRouter(tags=["auth"])
 
 
 # Dependency
-def get_user_repository() -> UserRepositoryPort:
-    return AsyncpgUserRepository()
+def get_user_repository(
+    session: AsyncSession = Depends(get_session),
+) -> UserRepositoryPort:
+    return SQLAlchemyUserRepository(session)
 
 
 @router.post(
@@ -41,21 +48,19 @@ async def register(
     - **email**: Email address (will be made unique)
     - **password**: Plain text password (will be hashed)
     """
-    # Check if user already exists
-    existing = await repo.get_by_email(user_data.email)
-    if existing is not None:
+    # Hash password and create user
+    hashed_password = hash_password(user_data.password)
+    try:
+        new_user = await repo.create(
+            name=user_data.name,
+            email=user_data.email,
+            password=hashed_password,
+        )
+    except UserAlreadyExistsError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
-        )
-
-    # Hash password and create user
-    hashed_password = hash_password(user_data.password)
-    new_user = await repo.create(
-        name=user_data.name,
-        email=user_data.email,
-        password=hashed_password,
-    )
+        ) from None
 
     return UserResponse(
         id=new_user.id,
