@@ -78,11 +78,54 @@ El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extract
 
 En cada reintento el writer recibe el CV optimizado anterior y el motivo (`reason`) del auditor para corregir las carencias señaladas. El adaptador registra por log el `variance_score` y el `reason` de cada intento (nivel INFO/WARNING) para diagnosticar por qué no converge.
 
+## Base de datos y migraciones
+
+La persistencia usa SQLAlchemy 2.0 async con `asyncpg`. La configuración se toma de las variables `DB_*` del `.env` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`).
+
+### Levantar PostgreSQL con Docker Compose
+
+El `compose.yaml` levanta únicamente el servicio de base de datos. Usa las variables `DB_*` del `.env` y persiste los datos en el volumen `postgres_data`:
+
+```bash
+docker compose up -d db
+docker compose ps
+```
+
+Espera a que el servicio aparezca como `healthy` antes de aplicar las migraciones. Para detenerlo:
+
+```bash
+docker compose down
+```
+
+`docker compose down -v` también elimina el volumen y, por tanto, los datos de la base de datos.
+
+El esquema se gestiona con Alembic:
+
+```bash
+# Aplica todas las migraciones pendientes
+uv run alembic upgrade head
+
+# Crea una nueva migración a partir de los modelos
+uv run alembic revision --autogenerate -m "descripcion"
+
+# Revierte la última migración
+uv run alembic downgrade -1
+```
+
+Si la tabla `users` ya existía antes de adoptar Alembic, marca la migración inicial como aplicada en lugar de volver a crearla:
+
+```bash
+uv run alembic stamp head
+```
+
 ## Endpoints
 
 | Método | Ruta            | Descripción                                | Respuesta                  |
 | ------ | --------------- | ------------------------------------------ | -------------------------- |
 | GET    | `/health`       | Verificación de estado                     | `{"status": "ok"}`         |
+| POST   | `/auth/register`| Registro de usuario (hash bcrypt)          | Usuario creado             |
+| POST   | `/auth/login`   | Login con email y contraseña               | Tokens JWT                 |
+| POST   | `/auth/refresh` | Renueva tokens con un refresh token        | Tokens JWT                 |
 | POST   | `/cv/upload`    | Carga de CV y job spec, ambos en multipart | CV y spec parseados        |
 | POST   | `/cv/optimize`  | Pipeline multi-agente sobre el CV y la spec | CV optimizado y auditado   |
 
