@@ -20,3 +20,7 @@ class EmptyContentError(InvalidUploadError):
 
 class AuditFailedError(DomainError):
     pass
+
+
+class UserAlreadyExistsError(DomainError):
+    pass

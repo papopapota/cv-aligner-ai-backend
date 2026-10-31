@@ -20,6 +20,7 @@ from src.infrastructure.adapters.inbound.api.domain_error_handler import (
     handle_invalid_upload,
 )
 from src.infrastructure.adapters.inbound.api.routers.auth_router import router as auth_router
+from src.infrastructure.database import dispose_engine
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,6 +29,7 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     build_optimize_cv_use_case()
     yield
+    await dispose_engine()
 
 
 app = FastAPI(
