@@ -20,6 +20,7 @@ from src.infrastructure.adapters.inbound.api.domain_error_handler import (
     handle_invalid_upload,
 )
 from src.infrastructure.adapters.inbound.api.routers.auth_router import router as auth_router
+from src.infrastructure.adapters.inbound.api.routers.application_router import router as application_router
 from src.infrastructure.database import dispose_engine
 
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +58,7 @@ app.add_exception_handler(AuditFailedError, handle_audit_failure)
 app.include_router(cv_router)
 app.include_router(cv_optimize_router)
 app.include_router(auth_router, prefix="/auth")
+app.include_router(application_router)
 
 
 @app.get("/health")
