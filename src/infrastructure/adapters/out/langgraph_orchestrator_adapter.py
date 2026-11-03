@@ -41,9 +41,7 @@ def parse_variance_score(audit: str) -> float:
             return float(token)
         except ValueError:
             continue
-    raise InvalidUploadError(
-        "The auditor did not return a numeric variance score."
-    )
+    raise InvalidUploadError("The auditor did not return a numeric variance score.")
 
 
 def parse_audit_reason(audit: str) -> str:
@@ -169,7 +167,8 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         if final_state["best_text"]:
             optimized = OptimizedCV(
                 content=final_state["best_text"],
-                variance_score=final_state["best_variance"],
+                original_variance_score=final_state["original_variance_score"],
+                optimized_variance_score=final_state["best_variance"],
                 writer_attempts=final_state["writer_attempts"],
                 variance_threshold=self._variance_threshold,
                 r_total=final_state["best_r_total"],
@@ -179,15 +178,17 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         else:
             optimized = OptimizedCV(
                 content=final_state["optimized_text"],
-                variance_score=final_state["variance_score"],
+                original_variance_score=final_state["original_variance_score"],
+                optimized_variance_score=final_state["optimized_variance_score"],
                 writer_attempts=final_state["writer_attempts"],
                 variance_threshold=self._variance_threshold,
                 gap_report=final_state["gap_analysis"],
             )
         logger.info(
-            "CV optimization finished: variance=%s attempts=%s "
-            "within_threshold=%s r_total=%s",
-            optimized.variance_score,
+            "CV optimization finished: original_variance=%s "
+            "optimized_variance=%s attempts=%s within_threshold=%s r_total=%s",
+            optimized.original_variance_score,
+            optimized.optimized_variance_score,
             optimized.writer_attempts,
             optimized.is_within_threshold(),
             optimized.r_total,
@@ -198,12 +199,14 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         graph: StateGraph[SharedState] = StateGraph(SharedState)
         graph.add_node("extractor", self._extractor)
         graph.add_node("analyzer", self._analyzer)
+        graph.add_node("original_auditor", self._original_auditor)
         graph.add_node("writer", self._writer)
         graph.add_node("auditor", self._auditor)
 
         graph.add_edge(START, "extractor")
+        graph.add_edge(START, "original_auditor")
         graph.add_edge("extractor", "analyzer")
-        graph.add_edge("analyzer", "writer")
+        graph.add_edge(["analyzer", "original_auditor"], "writer")
         graph.add_edge("writer", "auditor")
         graph.add_conditional_edges(
             "auditor",
@@ -258,6 +261,20 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             "baseline_match": baseline_match,
         }
 
+    async def _original_auditor(self, state: SharedState) -> dict[str, object]:
+        audit = await self._llm_agent.complete(
+            AgentRole.AUDITOR,
+            f"Job description:\n{state.job_description_text}\n"
+            f"Original CV:\n{state.candidate_cv_text}",
+        )
+        original_variance_score = parse_variance_score(audit)
+        logger.info(
+            "Original CV audit: variance=%s reason=%s",
+            original_variance_score,
+            parse_audit_reason(audit),
+        )
+        return {"original_variance_score": original_variance_score}
+
     async def _writer(self, state: SharedState) -> dict[str, object]:
         prompt = self._writer_prompt(state)
         optimized_text = await self._llm_agent.complete(
@@ -280,7 +297,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             f"Job description:\n{state.job_description_text}\n"
             f"Gaps:\n{state.gap_analysis}\n"
             f"Previous optimized CV:\n{state.optimized_text}\n"
-            f"Auditor feedback (variance {state.variance_score}):\n"
+            f"Auditor feedback (variance {state.optimized_variance_score}):\n"
             f"{state.audit_reason}\n"
             "Corrige específicamente las carencias señaladas por el auditor "
             "en el CV optimizado anterior, sin inventar experiencia ni "
@@ -295,16 +312,16 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             f"Gaps:\n{state.gap_analysis}\n"
             f"Optimized CV:\n{state.optimized_text}",
         )
-        variance_score = parse_variance_score(audit)
+        optimized_variance_score = parse_variance_score(audit)
         audit_reason = parse_audit_reason(audit)
         logger.info(
             "Auditor attempt %s: variance=%s reason=%s",
             state.writer_attempts,
-            variance_score,
+            optimized_variance_score,
             audit_reason,
         )
         updates: dict[str, object] = {
-            "variance_score": variance_score,
+            "optimized_variance_score": optimized_variance_score,
             "audit_reason": audit_reason,
         }
         if self._match_scorer is None:
@@ -328,13 +345,13 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         if state.best_text == "" or optimized_match.r_total > state.best_r_total:
             updates["best_text"] = state.optimized_text
             updates["best_r_total"] = optimized_match.r_total
-            updates["best_variance"] = variance_score
+            updates["best_variance"] = optimized_variance_score
             updates["best_per_dimension"] = optimized_match.per_dimension
         return updates
 
     def _route_after_audit(self, state: SharedState) -> str:
         decision = evaluate_variance(
-            state.variance_score,
+            state.optimized_variance_score,
             self._variance_threshold,
         )
         match_approved = (
@@ -351,7 +368,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             logger.warning(
                 "Variance %s above threshold %s after attempt %s: retrying "
                 "the writer.",
-                state.variance_score,
+                state.optimized_variance_score,
                 self._variance_threshold,
                 state.writer_attempts,
             )

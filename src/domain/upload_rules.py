@@ -17,9 +17,7 @@ def ensure_size_within_limit(size_bytes: int) -> None:
         raise EmptyContentError("The uploaded file is empty.")
     if size_bytes > MAX_UPLOAD_SIZE_BYTES:
         limit_in_mb = MAX_UPLOAD_SIZE_BYTES // _MEGABYTE
-        raise FileTooLargeError(
-            f"The uploaded file exceeds the maximum size of {limit_in_mb} MB."
-        )
+        raise FileTooLargeError(f"The uploaded file exceeds the maximum size of {limit_in_mb} MB.")
 
 
 def ensure_allowed_extension(
@@ -29,9 +27,7 @@ def ensure_allowed_extension(
     extensions = allowed_extensions or ALLOWED_EXTENSIONS
     if Path(filename).suffix.lower() not in extensions:
         allowed = ", ".join(sorted(extensions))
-        raise UnsupportedFormatError(
-            f"Unsupported file format. Allowed extensions: {allowed}."
-        )
+        raise UnsupportedFormatError(f"Unsupported file format. Allowed extensions: {allowed}.")
 
 
 def ensure_job_description_extension(filename: str) -> None:

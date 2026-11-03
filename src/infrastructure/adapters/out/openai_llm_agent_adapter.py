@@ -31,8 +31,8 @@ _SYSTEM_PROMPTS: dict[AgentRole, str] = {
         "original."
     ),
     AgentRole.AUDITOR: (
-        "Evalúa cuánto difiere todavía el CV optimizado respecto a la "
-        "descripción del puesto. Responde ÚNICAMENTE con un JSON de la forma "
+        "Evalúa cuánto difiere el CV recibido respecto a la descripción del "
+        "puesto. Responde ÚNICAMENTE con un JSON de la forma "
         '{"variance_score": <float 0..1>, "reason": "<texto breve>"}. '
         "Un variance_score alto significa que quedan carencias "
         "significativas."
@@ -77,14 +77,12 @@ class OpenAILLMAgentAdapter(LLMAgentPort):
             )
         except APIError as exc:
             raise LLMError(
-                f"LLM call failed for role '{role.value}' on model "
-                f"'{self._model}': {exc}"
+                f"LLM call failed for role '{role.value}' on model '{self._model}': {exc}"
             ) from exc
 
         content = response.choices[0].message.content
         if not content:
             raise LLMError(
-                f"LLM returned no content for role '{role.value}' "
-                f"on model '{self._model}'."
+                f"LLM returned no content for role '{role.value}' on model '{self._model}'."
             )
         return content

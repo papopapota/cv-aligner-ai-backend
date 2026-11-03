@@ -20,12 +20,12 @@ _JOB_DESC_CONTENT = _JOB_DESCRIPTION.encode("utf-8")
 @pytest.fixture
 def cv_parser() -> AsyncMock:
     parser = AsyncMock(spec=CVParserPort)
-    
+
     async def parse_side_effect(filename: str, content: bytes) -> str:
         if filename.endswith(".txt"):
             return _JOB_DESCRIPTION
         return _EXTRACTED_TEXT
-    
+
     parser.parse.side_effect = parse_side_effect
     return parser
 

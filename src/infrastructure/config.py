@@ -1,11 +1,38 @@
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 from src.application.ports.out.llm_agent_port import AgentRole
 from src.domain.audit_rules import (
     DEFAULT_R_TOTAL_TARGET,
     MAX_VARIANCE_THRESHOLD,
 )
+
+
+class DBSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="DB_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    host: str = "localhost"
+    port: int = 5432
+    name: str = "cvaligner"
+    user: str = "postgres"
+    password: str = "postgresql"
+
+    @property
+
+    def url(self) -> URL:
+        return URL.create(
+            drivername="postgresql+asyncpg",
+            username=self.user,
+            password=self.password,
+            host=self.host,
+            port=self.port,
+            database=self.name,
+        )
 
 
 class AuditSettings(BaseSettings):

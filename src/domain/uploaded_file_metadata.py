@@ -68,6 +68,4 @@ class UploadedFileMetadata:
     def _ensure_valid_sha256(self) -> None:
         digest = self.sha256.lower()
         if len(digest) != _SHA256_LENGTH or not set(digest) <= _HEX_DIGITS:
-            raise InvalidUploadError(
-                "sha256 must be a 64-character hexadecimal digest."
-            )
+            raise InvalidUploadError("sha256 must be a 64-character hexadecimal digest.")

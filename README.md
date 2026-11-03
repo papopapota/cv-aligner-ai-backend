@@ -74,9 +74,49 @@ Copia `.env.example` a `.env` (el `.env` no se commitea):
 | `LLM_TIMEOUT_SECONDS` | Timeout por llamada en segundos. |
 | `AUDIT_VARIANCE_THRESHOLD` | Umbral de varianza del auditor (0..1, default 0.45). Por encima, el writer se reintenta. |
 
-El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extractor/analyzer/writer/auditor) con temperatura distinta por rol. El auditor responde JSON `{"variance_score": …}` y, si no, el grafo intenta parsear el primer número del texto como fallback.
+El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extractor/analyzer/writer/auditor) con temperatura distinta por rol. El auditor evalúa tanto el CV original como el optimizado y responde JSON `{"variance_score": …}`; si no, el grafo intenta parsear el primer número del texto como fallback. El primer score se calcula una sola vez en paralelo con las fases de extracción y análisis, y el segundo se recalcula en cada intento del auditor.
 
 En cada reintento el writer recibe el CV optimizado anterior y el motivo (`reason`) del auditor para corregir las carencias señaladas. El adaptador registra por log el `variance_score` y el `reason` de cada intento (nivel INFO/WARNING) para diagnosticar por qué no converge.
+
+## Base de datos y migraciones
+
+La persistencia usa SQLAlchemy 2.0 async con `asyncpg`. La configuración se toma de las variables `DB_*` del `.env` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`).
+
+### Levantar PostgreSQL con Docker Compose
+
+El `compose.yaml` levanta únicamente el servicio de base de datos. Usa las variables `DB_*` del `.env` y persiste los datos en el volumen `postgres_data`:
+
+```bash
+docker compose up -d db
+docker compose ps
+```
+
+Espera a que el servicio aparezca como `healthy` antes de aplicar las migraciones. Para detenerlo:
+
+```bash
+docker compose down
+```
+
+`docker compose down -v` también elimina el volumen y, por tanto, los datos de la base de datos.
+
+El esquema se gestiona con Alembic:
+
+```bash
+# Aplica todas las migraciones pendientes
+uv run alembic upgrade head
+
+# Crea una nueva migración a partir de los modelos
+uv run alembic revision --autogenerate -m "descripcion"
+
+# Revierte la última migración
+uv run alembic downgrade -1
+```
+
+Si la tabla `users` ya existía antes de adoptar Alembic, marca la migración inicial como aplicada en lugar de volver a crearla:
+
+```bash
+uv run alembic stamp head
+```
 
 ## Scoring cuantitativo (R_total)
 
@@ -98,6 +138,9 @@ Las lambdas deben sumar 1; antes de embeddear se ofuscan datos personales y atri
 | Método | Ruta            | Descripción                                | Respuesta                  |
 | ------ | --------------- | ------------------------------------------ | -------------------------- |
 | GET    | `/health`       | Verificación de estado                     | `{"status": "ok"}`         |
+| POST   | `/auth/register`| Registro de usuario (hash bcrypt)          | Usuario creado             |
+| POST   | `/auth/login`   | Login con email y contraseña               | Tokens JWT                 |
+| POST   | `/auth/refresh` | Renueva tokens con un refresh token        | Tokens JWT                 |
 | POST   | `/cv/upload`    | Carga de CV y job spec, ambos en multipart | CV y spec parseados        |
 | POST   | `/cv/optimize`  | Pipeline multi-agente sobre el CV y la spec | CV optimizado y auditado   |
 
@@ -105,14 +148,14 @@ Ambos endpoints reciben los mismos dos campos multipart (`cv_file` y `job_descri
 
 ### Contrato de `POST /cv/optimize`
 
-Ejecuta el grafo de LangGraph (extractor → analyzer → writer → auditor). Si la varianza del auditor supera el umbral **o** el `R_total` del CV optimizado queda por debajo de `MATCH_TARGET_R_TOTAL`, el writer se reintenta hasta 3 veces.
+Ejecuta el grafo de LangGraph: la cadena `extractor → analyzer` corre en paralelo con el auditor del CV original, y el writer espera a ambas ramas para continuar. El score del CV original se calcula una sola vez y solo se informa; si la varianza del CV optimizado supera el umbral **o** el `R_total` del CV optimizado queda por debajo de `MATCH_TARGET_R_TOTAL`, el writer se reintenta hasta 3 intentos totales.
 
 | Campo         | Extensiones     |
 | ------------- | --------------- |
 | `cv_file`     | `.pdf`, `.docx` |
 | `job_description_file` | `.txt`  |
 
-Respuesta: `optimized_content`, `variance_score`, `writer_attempts`, `is_within_threshold`, `r_total`, `per_dimension` (desglose por dimensión) y `gap_report` (brechas restantes; vacío si no hay análisis). `r_total`/`per_dimension` son `null`/`{}` si el scorer no está disponible.
+Respuesta: `optimized_content`, `original_variance_score`, `optimized_variance_score`, `writer_attempts` e `is_within_threshold`. `is_within_threshold` se calcula únicamente con `optimized_variance_score`, `r_total`, `per_dimension` (desglose por dimensión) y `gap_report` (brechas restantes; vacío si no hay análisis). `r_total`/`per_dimension` son `null`/`{}` si el scorer no está disponible..
 
 Al agotar los reintentos se devuelve la **mejor versión** obtenida (la de mayor `R_total`) con su gap report (best-effort). `400` para formatos o tamaños inválidos, `422` si falta un campo.
 

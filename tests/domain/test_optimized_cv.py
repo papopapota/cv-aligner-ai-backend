@@ -14,7 +14,8 @@ _CONTENT = "Optimized CV body"
 
 def _optimized_cv(
     content: str = _CONTENT,
-    variance_score: float = 0.1,
+    original_variance_score: float = 0.8,
+    optimized_variance_score: float = 0.1,
     writer_attempts: int = 1,
     variance_threshold: float = MAX_VARIANCE_THRESHOLD,
     r_total: float | None = None,
@@ -23,7 +24,8 @@ def _optimized_cv(
 ) -> OptimizedCV:
     return OptimizedCV(
         content=content,
-        variance_score=variance_score,
+        original_variance_score=original_variance_score,
+        optimized_variance_score=optimized_variance_score,
         writer_attempts=writer_attempts,
         variance_threshold=variance_threshold,
         r_total=r_total,
@@ -36,7 +38,8 @@ def test_creates_an_optimized_cv() -> None:
     optimized = _optimized_cv()
 
     assert optimized.content == _CONTENT
-    assert optimized.variance_score == 0.1
+    assert optimized.original_variance_score == 0.8
+    assert optimized.optimized_variance_score == 0.1
     assert optimized.writer_attempts == 1
     assert optimized.r_total is None
     assert optimized.per_dimension == {}
@@ -77,9 +80,15 @@ def test_rejects_blank_content(content: str) -> None:
 
 
 @pytest.mark.parametrize("score", [-0.1, 1.1])
-def test_rejects_a_score_outside_the_unit_range(score: float) -> None:
+def test_rejects_an_original_score_outside_the_unit_range(score: float) -> None:
     with pytest.raises(InvalidUploadError):
-        _optimized_cv(variance_score=score)
+        _optimized_cv(original_variance_score=score)
+
+
+@pytest.mark.parametrize("score", [-0.1, 1.1])
+def test_rejects_an_optimized_score_outside_the_unit_range(score: float) -> None:
+    with pytest.raises(InvalidUploadError):
+        _optimized_cv(optimized_variance_score=score)
 
 
 @pytest.mark.parametrize("attempts", [0, -1])
@@ -89,31 +98,40 @@ def test_rejects_a_writer_that_never_ran(attempts: int) -> None:
 
 
 def test_is_within_the_threshold() -> None:
-    assert _optimized_cv(variance_score=MAX_VARIANCE_THRESHOLD).is_within_threshold()
+    assert _optimized_cv(
+        optimized_variance_score=MAX_VARIANCE_THRESHOLD
+    ).is_within_threshold()
     assert not _optimized_cv(
-        variance_score=MAX_VARIANCE_THRESHOLD + 0.01
+        optimized_variance_score=MAX_VARIANCE_THRESHOLD + 0.01
     ).is_within_threshold()
 
 
 def test_uses_a_custom_threshold() -> None:
     assert _optimized_cv(
-        variance_score=0.6,
+        optimized_variance_score=0.6,
         variance_threshold=0.7,
     ).is_within_threshold()
     assert not _optimized_cv(
-        variance_score=0.6,
+        optimized_variance_score=0.6,
         variance_threshold=0.5,
     ).is_within_threshold()
 
 
 def test_is_within_the_threshold_requires_the_dual_gate() -> None:
     assert _optimized_cv(
-        variance_score=MAX_VARIANCE_THRESHOLD,
+        optimized_variance_score=MAX_VARIANCE_THRESHOLD,
         r_total=DEFAULT_R_TOTAL_TARGET,
     ).is_within_threshold()
     assert not _optimized_cv(
-        variance_score=MAX_VARIANCE_THRESHOLD,
+        optimized_variance_score=MAX_VARIANCE_THRESHOLD,
         r_total=DEFAULT_R_TOTAL_TARGET - 0.01,
+    ).is_within_threshold()
+
+
+def test_the_original_score_does_not_affect_the_threshold() -> None:
+    assert _optimized_cv(
+        original_variance_score=0.9,
+        optimized_variance_score=0.1,
     ).is_within_threshold()
 
 

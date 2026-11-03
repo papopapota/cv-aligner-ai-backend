@@ -23,7 +23,7 @@ flowchart TB
         end
 
         subgraph Domain["NÚCLEO DE DOMINIO"]
-            State["SharedState / Context<br/>(Estado Global)"]
+            State["SharedState / Context<br/>(original_variance_score,<br/>optimized_variance_score, R_total)"]
             AuditRules["Reglas de Auditoría & Umbrales<br/>(R_total >= threshold, Filtro Varianza)"]
             Entities["Entidades & Value Objects:<br/>CandidateCV, JobDescription, OptimizedCV,<br/>CompatibilityScore (Scosine, Deuclid, Acontext, Rtotal)"]
         end
@@ -57,11 +57,14 @@ flowchart TB
             LG_Engine["LangGraph StateGraph Engine"]
             NodeExt["Nodo: Agente Extractor"]
             NodeAna["Nodo: Agente Analizador<br/>(Calcula R_total Inicial - Baseline)"]
+            NodeOrigAud["Nodo: Auditor CV Original<br/>(Calcula Varianza Inicial)"]
             NodeWri["Nodo: Agente Redactor"]
             NodeAud["Nodo: Agente Auditor<br/>(Calcula R_total Optimizado + Varianza)"]
             EdgeCond{"Evaluación Auditor<br/>(R_total >= Umbral & Varianza OK)"}
 
-            LG_Engine --> NodeExt --> NodeAna --> NodeWri --> NodeAud --> EdgeCond
+            LG_Engine --> NodeExt --> NodeAna --> NodeWri
+            LG_Engine --> NodeOrigAud --> NodeWri
+            NodeWri --> NodeAud --> EdgeCond
             EdgeCond -- "Retry (R_total bajo / Desvío)" --> NodeWri
         end
 
@@ -97,6 +100,7 @@ flowchart TB
     NodeExt -. Usa .-> LLM_API
     NodeAna -. Usa .-> ScorerEngine
     NodeAna -. Usa .-> LLM_API
+    NodeOrigAud -. Evalúa CV original .-> LLM_API
     NodeWri -. Contexto RAG .-> VDB
     NodeWri -. Genera borrador .-> LLM_API
     NodeAud -. Evalúa match .-> ScorerEngine
