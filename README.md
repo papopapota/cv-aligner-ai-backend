@@ -74,6 +74,16 @@ Copia `.env.example` a `.env` (el `.env` no se commitea):
 | `LLM_TIMEOUT_SECONDS` | Timeout por llamada en segundos. |
 | `AUDIT_VARIANCE_THRESHOLD` | Umbral de varianza del auditor (0..1, default 0.45). Por encima, el writer se reintenta. |
 
+### Autenticación y CORS
+
+| Variable | Uso |
+| --- | --- |
+| `JWT_SECRET_KEY` | Clave con la que se firman los tokens. Si no se define, se genera una aleatoria por proceso y los tokens dejan de ser válidos al reiniciar. |
+| `JWT_ALGORITHM` | Algoritmo de firma (`HS256` por defecto). |
+| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | Vida del access token en minutos (30 por defecto). |
+| `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | Vida del refresh token en días (7 por defecto). |
+| `CORS_ORIGINS` | Orígenes permitidos, separados por coma (`http://localhost:3000,http://127.0.0.1:3000` por defecto). |
+
 El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extractor/analyzer/writer/auditor) con temperatura distinta por rol. El auditor evalúa tanto el CV original como el optimizado y responde JSON `{"variance_score": …}`; si no, el grafo intenta parsear el primer número del texto como fallback. El primer score se calcula una sola vez en paralelo con las fases de extracción y análisis, y el segundo se recalcula en cada intento del auditor.
 
 En cada reintento el writer recibe el CV optimizado anterior y el motivo (`reason`) del auditor para corregir las carencias señaladas. El adaptador registra por log el `variance_score` y el `reason` de cada intento (nivel INFO/WARNING) para diagnosticar por qué no converge.
@@ -128,8 +138,59 @@ uv run alembic stamp head
 | POST   | `/auth/refresh` | Renueva tokens con un refresh token        | Tokens JWT                 |
 | POST   | `/cv/upload`    | Carga de CV y job spec, ambos en multipart | CV y spec parseados        |
 | POST   | `/cv/optimize`  | Pipeline multi-agente sobre el CV y la spec | CV optimizado y auditado   |
+| GET    | `/applications` | Lista las postulaciones del usuario autenticado | Array de postulaciones |
+| POST   | `/applications` | Crea una postulación para el usuario autenticado | Postulación creada (`201`) |
+| PATCH  | `/applications/{id}/status` | Actualiza el estado de una postulación | Postulación actualizada |
+| DELETE | `/applications/{id}` | Elimina una postulación del usuario autenticado | `204` sin body |
 
-Ambos endpoints reciben los mismos dos campos multipart (`cv_file` y `job_description_file`), porque el flujo es sin estado: `/cv/optimize` vuelve a parsear los archivos en lugar de guardarlos.
+Ambos endpoints `/cv/*` reciben los mismos dos campos multipart (`cv_file` y `job_description_file`), porque el flujo es sin estado: `/cv/optimize` vuelve a parsear los archivos en lugar de guardarlos.
+
+### Contrato de `/applications`
+
+Los cuatro endpoints requieren `Authorization: Bearer <access_token>`. El dueño de la postulación se obtiene del `sub` del JWT (el email del usuario), nunca de un `user_id` enviado por el cliente.
+
+```http
+GET /applications
+```
+
+Devuelve solo las postulaciones del usuario autenticado, ordenadas por `created_at` descendente:
+
+```json
+[
+  {
+    "id": 1,
+    "user_id": 7,
+    "job_title": "Desarrollador Frontend",
+    "company": "Tech Corp",
+    "status": "pending",
+    "created_at": "2026-01-15T10:30:00"
+  }
+]
+```
+
+```http
+POST /applications
+Content-Type: application/json
+
+{ "job_title": "Desarrollador Frontend", "company": "Tech Corp" }
+```
+
+El estado inicial siempre es `pending`. El `user_id` del body se ignora (no forma parte del schema).
+
+```http
+PATCH /applications/1/status
+Content-Type: application/json
+
+{ "status": "accepted" }
+```
+
+Estados válidos: `pending`, `under-review`, `accepted`, `rejected`. Un estado fuera de esa lista devuelve `422`; una postulación inexistente o de otro usuario devuelve `404`. Sin token o con un token inválido/expirado, `401`.
+
+```http
+DELETE /applications/1
+```
+
+Elimina la postulación y responde `204 No Content` sin body. Si no existe o pertenece a otro usuario, devuelve `404`; sin token o con un token inválido/expirado, `401`.
 
 ### Contrato de `POST /cv/optimize`
 

@@ -23,6 +23,7 @@ from src.infrastructure.adapters.inbound.api.routers.application_router import (
     router as application_router,
 )
 from src.infrastructure.adapters.inbound.api.routers.auth_router import router as auth_router
+from src.infrastructure.config import CORSSettings
 from src.infrastructure.database import dispose_engine
 
 logging.basicConfig(level=logging.INFO)
@@ -45,10 +46,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=CORSSettings().allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

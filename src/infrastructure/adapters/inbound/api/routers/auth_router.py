@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.ports.out.user_port import UserRepositoryPort
+from src.domain.entities.user import User
 from src.domain.errors import UserAlreadyExistsError
 from src.infrastructure.adapters.inbound.api.dto.auth_dto import (
     LoginRequest,
@@ -29,6 +31,41 @@ def get_user_repository(
     session: AsyncSession = Depends(get_session),
 ) -> UserRepositoryPort:
     return SQLAlchemyUserRepository(session)
+
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    repo: UserRepositoryPort = Depends(get_user_repository),
+) -> User:
+    """Resolve the authenticated user from the ``Authorization: Bearer`` token."""
+    if credentials is None:
+        raise _unauthorized("Not authenticated")
+
+    try:
+        payload = decode_access_token(credentials.credentials)
+    except Exception:
+        raise _unauthorized("Invalid or expired token") from None
+
+    email = payload.get("sub")
+    if not isinstance(email, str) or not email:
+        raise _unauthorized("Invalid or expired token")
+
+    user = await repo.get_by_email(email)
+    if user is None:
+        raise _unauthorized("User not found")
+
+    return user
 
 
 @router.post(

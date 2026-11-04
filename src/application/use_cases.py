@@ -1,81 +1,65 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from src.application.ports.out.application_repository import ApplicationRepositoryPort
 from src.application.schemas import ApplicationCreate, ApplicationResponse
-from src.infrastructure.adapters.out.repositories.models import ApplicationModel
-from src.infrastructure.database import async_session_factory
+from src.domain.entities.application import Application
+
+DEFAULT_APPLICATION_STATUS = "pending"
 
 
 class ApplicationUseCase:
-    """Case of use for Application management."""
+    """Use case for Application management.
 
-    def __init__(self) -> None:
-        pass
+    It only depends on the output port, never on infrastructure details.
+    """
 
-    async def create_application(self, data: ApplicationCreate) -> ApplicationResponse:
-        """Create a new application.
-        
-        Requires user_id to be provided in the data to associate with a registered user.
-        """
-        async with async_session_factory() as session:
-            application = ApplicationModel(
-                user_id=data.user_id,
-                job_title=data.job_title,
-                company=data.company,
-                status="pending",
-            )
-            session.add(application)
-            await session.flush()
-            await session.commit()  # Add commit
-            await session.refresh(application)
-            return ApplicationResponse(
-                id=application.id,
-                user_id=application.user_id,
-                job_title=application.job_title,
-                company=application.company,
-                status=application.status,
-                created_at=application.created_at,
-            )
+    def __init__(self, repository: ApplicationRepositoryPort) -> None:
+        self._repository = repository
+
+    async def create_application(
+        self,
+        user_id: int,
+        data: ApplicationCreate,
+    ) -> ApplicationResponse:
+        """Create a new application owned by ``user_id``."""
+        application = Application(
+            id=None,
+            user_id=user_id,
+            job_title=data.job_title,
+            company=data.company,
+            status=DEFAULT_APPLICATION_STATUS,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        created = await self._repository.create(application)
+        return ApplicationResponse.from_domain(created)
 
     async def list_applications(self, user_id: int) -> list[ApplicationResponse]:
-        """List applications for a specific user.
-        
-        Filters applications by user_id.
-        """
-        async with async_session_factory() as session:
-            from sqlalchemy import select
-            result = await session.execute(
-                select(ApplicationModel).where(ApplicationModel.user_id == user_id)
-            )
-            applications = result.scalars().all()
-            return [
-                ApplicationResponse(
-                    id=app.id,
-                    user_id=app.user_id,
-                    job_title=app.job_title,
-                    company=app.company,
-                    status=app.status,
-                    created_at=app.created_at,
-                )
-                for app in applications
-            ]
+        """List the applications owned by ``user_id``."""
+        applications = await self._repository.list_by_user(user_id)
+        return [ApplicationResponse.from_domain(app) for app in applications]
 
     async def update_application_status(
-        self, application_id: int, status: str
+        self,
+        application_id: int,
+        user_id: int,
+        status: str,
     ) -> ApplicationResponse | None:
-        """Update application status."""
-        async with async_session_factory() as session:
-            application = await session.get(ApplicationModel, application_id)
-            if application is None:
-                return None
-            application.status = status
-            await session.flush()
-            await session.commit()  # Add commit
-            await session.refresh(application)
-            return ApplicationResponse(
-                id=application.id,
-                user_id=application.user_id,
-                job_title=application.job_title,
-                company=application.company,
-                status=application.status,
-                created_at=application.created_at,
-            )
+        """Update the status of an application owned by ``user_id``."""
+        application = await self._repository.update_status(
+            application_id,
+            user_id,
+            status,
+        )
+        if application is None:
+            return None
+        return ApplicationResponse.from_domain(application)
+
+    async def delete_application(self, application_id: int, user_id: int) -> bool:
+        """Delete an application owned by ``user_id``.
+
+        Returns ``False`` when the application does not exist or belongs to
+        another user.
+        """
+        return await self._repository.delete(application_id, user_id)
