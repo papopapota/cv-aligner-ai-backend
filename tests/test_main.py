@@ -21,6 +21,8 @@ def test_the_openapi_exposes_every_route() -> None:
     paths = app.openapi()["paths"]
 
     assert sorted(paths) == [
+        "/applications/",
+        "/applications/{application_id}/status",
         "/auth/login",
         "/auth/refresh",
         "/auth/register",
