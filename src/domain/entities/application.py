@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, DateTime, Integer
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.infrastructure.database import Base
@@ -41,4 +41,8 @@ class Application(Base):
         self.created_at = created_at or datetime.utcnow()
 
     def __repr__(self) -> str:
-        return f"Application(id={self.id}, user_id={self.user_id}, job_title={self.job_title!r}, company={self.company!r}, status={self.status!r})"
+        return (
+            "Application("
+            f"id={self.id}, user_id={self.user_id}, job_title={self.job_title!r}, "
+            f"company={self.company!r}, status={self.status!r})"
+        )

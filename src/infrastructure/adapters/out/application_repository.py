@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from abc import ABC
-
 from src.application.ports.out.application_repository import ApplicationRepositoryPort
-from src.infrastructure.database import Base, get_session, async_session_factory
 from src.domain.entities.application import Application
+from src.infrastructure.database import async_session_factory
 
 
 class SQLAlchemyApplicationRepository(ApplicationRepositoryPort):

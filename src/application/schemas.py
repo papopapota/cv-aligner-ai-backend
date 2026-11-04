@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from src.domain.entities.application import Application
 
 
 class ApplicationCreate(BaseModel):
@@ -27,7 +31,7 @@ class ApplicationResponse(BaseModel):
     created_at: datetime
 
     @classmethod
-    def from_domain(cls, application: "Application") -> "ApplicationResponse":
+    def from_domain(cls, application: Application) -> ApplicationResponse:
         """Convert from domain entity to schema."""
         return cls(
             id=application.id if application.id is not None else 0,

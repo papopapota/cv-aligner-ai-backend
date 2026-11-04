@@ -19,8 +19,10 @@ from src.infrastructure.adapters.inbound.api.cv_optimize_controller import (
 from src.infrastructure.adapters.inbound.api.domain_error_handler import (
     handle_invalid_upload,
 )
+from src.infrastructure.adapters.inbound.api.routers.application_router import (
+    router as application_router,
+)
 from src.infrastructure.adapters.inbound.api.routers.auth_router import router as auth_router
-from src.infrastructure.adapters.inbound.api.routers.application_router import router as application_router
 from src.infrastructure.database import dispose_engine
 
 logging.basicConfig(level=logging.INFO)

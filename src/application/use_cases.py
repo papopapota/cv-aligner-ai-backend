@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from src.application.schemas import ApplicationCreate, ApplicationResponse
 from src.infrastructure.adapters.out.repositories.models import ApplicationModel
-from sqlalchemy import select
 from src.infrastructure.database import async_session_factory
 
 

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.application.schemas import ApplicationCreate, ApplicationResponse
 from src.application.use_cases import ApplicationUseCase
-from src.infrastructure.database import async_session_factory
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
@@ -45,4 +44,7 @@ async def update_application_status(
     use_case: ApplicationUseCase = Depends(get_application_use_case),
 ) -> ApplicationResponse:
     """Update application status."""
-    return await use_case.update_application_status(application_id, status)
+    application = await use_case.update_application_status(application_id, status)
+    if application is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return application
