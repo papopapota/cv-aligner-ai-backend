@@ -1,28 +1,37 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from src.domain.entities.application import Application
 
+ApplicationStatus = Literal["pending", "under-review", "accepted", "rejected"]
+
 
 class ApplicationCreate(BaseModel):
     """Schema to create a new application.
-    
-    Requires user_id to associate the application with a registered user.
+
+    The owner is taken from the authenticated user, never from the payload.
     """
+
     job_title: str = Field(..., description="Título del puesto")
     company: str = Field(..., description="Nombre de la empresa")
-    user_id: int = Field(..., description="ID del usuario registrado")
 
     model_config = {"from_attributes": True}
 
 
+class ApplicationStatusUpdate(BaseModel):
+    """Schema to update the status of an application."""
+
+    status: ApplicationStatus = Field(..., description="Nuevo estado de la postulación")
+
+
 class ApplicationResponse(BaseModel):
     """Schema for application response."""
+
     id: int
     user_id: int
     job_title: str
