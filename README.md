@@ -118,20 +118,30 @@ Si la tabla `users` ya existía antes de adoptar Alembic, marca la migración in
 uv run alembic stamp head
 ```
 
-## Scoring cuantitativo (R_total)
+## Scoring cuantitativo (IC)
 
-El `EmbeddingMatchScorerAdapter` calcula el match entre candidato y oferta con embeddings del mismo proveedor que el LLM (usa `LLM_BASE_URL` si está configurado, si no OpenAI) y `numpy`. Está **cableado en `composition.py`** (reutiliza el mismo cliente OpenAI): el orquestador extrae las subdimensiones (`SemanticProfile`) del candidato y de la oferta, computa el baseline `R_total`, re-verifica el CV optimizado y condiciona la aprobación a `r_total >= MATCH_TARGET_R_TOTAL` **y** al umbral de varianza. Si tras `MAX_WRITER_ATTEMPTS` no convergen ambos gates, se devuelve la mejor versión de `R_total` con su **gap report** (best-effort, ya no se lanza `AuditFailedError`).
+El `EmbeddingMatchScorerAdapter` calcula el Índice de Compatibilidad (IC) entre candidato y oferta. Está **cableado en `composition.py`**: reutiliza el mismo cliente OpenAI para embeddings y delega las métricas al dominio (`compatibility_metrics.py` y `tfidf.py`). El orquestador extrae las subdimensiones (`SemanticProfile`) del candidato y de la oferta, calcula el baseline de IC, re-verifica el CV optimizado y condiciona la aprobación a `ic >= MATCH_TARGET_IC` **y** al umbral de varianza. Si tras `MAX_WRITER_ATTEMPTS` no convergen ambos gates, se devuelve la mejor versión de IC con su **gap report** (best-effort).
+
+Fórmula implementada:
+
+```text
+Ncos   = similitud coseno de embeddings, clampada a [0, 1]
+Ntfidf = suma de TF-IDF de los términos compartidos / suma de TF-IDF de la oferta
+Neuc   = 1 - (distancia euclidiana de vectores unitarios / 2)
+IC     = 100 * (0.50 * Ncos + 0.30 * Ntfidf + 0.20 * Neuc)
+```
+
+El corpus TF-IDF es la pareja `[CV, oferta]`, con `idf(w) = log((1 + N) / (1 + df(w))) + 1`. Si la oferta no tiene tokens válidos, `Ntfidf = 0`. Los vectores se normalizan L2 antes de calcular `Neuc`, con `dmax = 2`; los vectores nulos y los textos vacíos producen métricas `0`.
 
 | Variable | Uso |
 | --- | --- |
-| `MATCH_TARGET_R_TOTAL` | Umbral de aprobación de `R_total` (default `0.85`). |
-| `MATCH_LAMBDA_S_COSINE` | Peso del alineamiento dimensional (default `0.45`). |
-| `MATCH_LAMBDA_D_EUCLIDEAN` | Peso de la proximidad global (default `0.25`). |
-| `MATCH_LAMBDA_A_CONTEXTUAL` | Peso del ajuste contextual (default `0.30`). |
+| `MATCH_TARGET_IC` | Umbral de aprobación del IC, escala `0..100` (default `85`). |
+| `MATCH_WEIGHT_NCOS` | Peso de `Ncos` (default `0.50`). |
+| `MATCH_WEIGHT_NTFIDF` | Peso de `Ntfidf` (default `0.30`). |
+| `MATCH_WEIGHT_NEUC` | Peso de `Neuc` (default `0.20`). |
 | `MATCH_EMBEDDING_MODEL` | Modelo de embeddings (default `text-embedding-3-small`). |
-| `MATCH_CHUNK_SIZE` | Tamaño de chunk para la atención contextual (default `512`). |
 
-Las lambdas deben sumar 1; antes de embeddear se ofuscan datos personales y atributos demográficos (edad, email, teléfono, nacionalidad, foto, etc.).
+Los pesos deben sumar 1. Antes de generar embeddings y calcular TF-IDF se ofuscan datos personales y atributos demográficos (edad, email, teléfono, nacionalidad, foto, etc.). Los desgloses `original_per_dimension` y `optimized_per_dimension` siguen siendo un diagnóstico con similitud coseno por dimensión y no influyen en el IC.
 
 ## Endpoints
 
@@ -148,16 +158,16 @@ Ambos endpoints reciben los mismos dos campos multipart (`cv_file` y `job_descri
 
 ### Contrato de `POST /cv/optimize`
 
-Ejecuta el grafo de LangGraph: la cadena `extractor → analyzer` corre en paralelo con el auditor del CV original, y el writer espera a ambas ramas para continuar. El score del CV original se calcula una sola vez y solo se informa; si la varianza del CV optimizado supera el umbral **o** el `R_total` del CV optimizado queda por debajo de `MATCH_TARGET_R_TOTAL`, el writer se reintenta hasta 3 intentos totales.
+Ejecuta el grafo de LangGraph: la cadena `extractor → analyzer` corre en paralelo con el auditor del CV original, y el writer espera a ambas ramas para continuar. El score del CV original se calcula antes de optimizar y se devuelve como `original_ic`/`original_per_dimension`; el resultado del CV optimizado se devuelve como `optimized_ic`/`optimized_per_dimension`. Si la varianza del CV optimizado supera el umbral **o** el `IC` del CV optimizado queda por debajo de `MATCH_TARGET_IC`, el writer se reintenta hasta 3 intentos totales.
 
 | Campo         | Extensiones     |
 | ------------- | --------------- |
 | `cv_file`     | `.pdf`, `.docx` |
 | `job_description_file` | `.txt`  |
 
-Respuesta: `optimized_content`, `original_variance_score`, `optimized_variance_score`, `writer_attempts` e `is_within_threshold`. `is_within_threshold` se calcula únicamente con `optimized_variance_score`, `r_total`, `per_dimension` (desglose por dimensión) y `gap_report` (brechas restantes; vacío si no hay análisis). `r_total`/`per_dimension` son `null`/`{}` si el scorer no está disponible..
+Respuesta: `optimized_content`, `original_variance_score`, `optimized_variance_score`, `writer_attempts` e `is_within_threshold`. Incluye `original_ic`/`original_per_dimension` (evaluación antes de optimizar) y `optimized_ic`/`optimized_per_dimension` (mejor versión generada). `is_within_threshold` se calcula con `optimized_variance_score`, `optimized_ic` y `gap_report` (brechas restantes; vacío si no hay análisis). Los cuatro campos de IC/desglose son `null`/`{}` si el scorer no está disponible.
 
-Al agotar los reintentos se devuelve la **mejor versión** obtenida (la de mayor `R_total`) con su gap report (best-effort). `400` para formatos o tamaños inválidos, `422` si falta un campo.
+Al agotar los reintentos se devuelve la **mejor versión** obtenida (la de mayor `IC`) con su gap report (best-effort). `400` para formatos o tamaños inválidos, `422` si falta un campo.
 
 > **Nota:** el pipeline llama a un LLM real compatible OpenAI (SDK `openai`). Requiere `LLM_API_KEY` en `.env`; si no está configurada, la app no arranca. Para desarrollo sin clave, apunta `LLM_BASE_URL` a un servidor local como Ollama o LM Studio.
 
