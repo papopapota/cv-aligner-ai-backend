@@ -7,6 +7,8 @@ class CVOptimizeResponse(BaseModel):
     optimized_variance_score: float
     writer_attempts: int
     is_within_threshold: bool
-    r_total: float | None
-    per_dimension: dict[str, float]
+    original_ic: float | None
+    optimized_ic: float | None
+    original_per_dimension: dict[str, float]
+    optimized_per_dimension: dict[str, float]
     gap_report: str

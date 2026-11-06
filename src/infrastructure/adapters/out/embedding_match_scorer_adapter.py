@@ -1,11 +1,19 @@
 import re
 from collections.abc import Mapping
 
-import numpy as np
-from openai import APIError, AsyncOpenAI
-
 from src.application.ports.out.match_scorer_port import MatchScorerPort
+from src.domain.compatibility_metrics import (
+    CompatibilityWeights,
+    compatibility_index,
+    normalized_cosine,
+    normalized_euclidean,
+)
 from src.domain.compatibility_score import CompatibilityScore
+from src.domain.tfidf import normalized_tfidf_relevance
+from src.infrastructure.adapters.out.openai_embedding_client import (
+    EmbeddingClient,
+    EmbeddingClientError,
+)
 from src.infrastructure.config import MatchScoringSettings
 
 _SANITIZERS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -54,72 +62,23 @@ def sanitize_report_text(text: str) -> str:
     return text
 
 
-def chunk_text(text: str, chunk_size: int) -> list[str]:
-    paragraphs = [paragraph.strip() for paragraph in text.splitlines() if paragraph.strip()]
-    if not paragraphs:
-        return []
-    chunks: list[str] = []
-    buffer = ""
-    for paragraph in paragraphs:
-        if not buffer:
-            buffer = paragraph
-        elif len(buffer) + 1 + len(paragraph) <= chunk_size:
-            buffer = f"{buffer}\n{paragraph}"
-        else:
-            chunks.append(buffer)
-            buffer = paragraph
-    if buffer:
-        chunks.append(buffer)
-    result: list[str] = []
-    for chunk in chunks:
-        split = _split_oversized(chunk, chunk_size)
-        if split:
-            result.append(split)
-    return result
-
-
-def _split_oversized(text: str, chunk_size: int) -> str:
-    if len(text) <= chunk_size:
-        return text
-    pieces: list[str] = []
-    for word in text.split():
-        if not pieces or len(pieces[-1]) + 1 + len(word) > chunk_size:
-            pieces.append(word)
-        else:
-            pieces[-1] = f"{pieces[-1]} {word}"
-    return "\n".join(pieces)
-
-
-def _cosine(left: np.ndarray, right: np.ndarray) -> float:
-    left_norm = float(np.linalg.norm(left))
-    right_norm = float(np.linalg.norm(right))
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    return float(np.dot(left, right) / (left_norm * right_norm))
-
-
-def _machine_attention(candidate: list[np.ndarray], job: list[np.ndarray]) -> float:
-    if not candidate or not job:
-        return 0.0
-    scores = np.asarray(
-        [[_cosine(c, j) for j in job] for c in candidate],
-        dtype=float,
-    )
-    shifted = scores - scores.max(axis=1, keepdims=True)
-    exponentials = np.exp(shifted)
-    weights = exponentials / exponentials.sum(axis=1, keepdims=True)
-    attended = (weights * scores).sum(axis=1)
-    return float(attended.mean())
-
-
 class MatchScorerError(RuntimeError):
     pass
 
 
 class EmbeddingMatchScorerAdapter(MatchScorerPort):
-    def __init__(self, client: AsyncOpenAI, settings: MatchScoringSettings) -> None:
-        self._client = client
+    def __init__(
+        self,
+        embedding_client: EmbeddingClient,
+        settings: MatchScoringSettings,
+    ) -> None:
+        self._embedding_client = embedding_client
         self._settings = settings
+        self._weights = CompatibilityWeights(
+            ncos=settings.weight_ncos,
+            ntfidf=settings.weight_ntfidf,
+            neuc=settings.weight_neuc,
+        )
 
     async def match(
         self,
@@ -133,45 +92,35 @@ class EmbeddingMatchScorerAdapter(MatchScorerPort):
 
         if not candidate_text or not job_text:
             return CompatibilityScore(
-                s_cosine=0.0,
-                d_euclidean=0.0,
-                a_contextual=0.0,
-                r_total=0.0,
+                ncos=0.0,
+                ntfidf=0.0,
+                neuc=0.0,
+                ic=0.0,
             )
 
-        candidate_vector, job_vector = await self._pair_embeddings(
-            candidate_text, job_text
-        )
+        try:
+            candidate_vector, job_vector = await self._pair_embeddings(
+                candidate_text,
+                job_text,
+            )
+        except EmbeddingClientError as exc:
+            raise MatchScorerError(str(exc)) from exc
 
-        s_cosine = _cosine(candidate_vector, job_vector)
-        euclidean = float(np.linalg.norm(candidate_vector - job_vector))
-        d_euclidean = 1.0 / (1.0 + euclidean)
-
-        candidate_vectors = await self._batch_embeddings(
-            chunk_text(candidate_text, self._settings.chunk_size)
-        )
-        job_vectors = await self._batch_embeddings(
-            chunk_text(job_text, self._settings.chunk_size)
-        )
-        a_contextual = _machine_attention(candidate_vectors, job_vectors)
+        ncos = normalized_cosine(candidate_vector, job_vector)
+        neuc = normalized_euclidean(candidate_vector, job_vector)
+        ntfidf = normalized_tfidf_relevance(candidate_text, job_text)
+        ic = compatibility_index(ncos, ntfidf, neuc, self._weights)
 
         per_dimension = await self._score_dimensions(
             candidate_dimensions,
             job_dimensions,
         )
 
-        r_total = (
-            self._settings.lambda_s_cosine * s_cosine
-            + self._settings.lambda_d_euclidean * d_euclidean
-            + self._settings.lambda_a_contextual * a_contextual
-        )
-        r_total = min(max(r_total, 0.0), 1.0)
-
         return CompatibilityScore(
-            s_cosine=s_cosine,
-            d_euclidean=d_euclidean,
-            a_contextual=a_contextual,
-            r_total=r_total,
+            ncos=ncos,
+            ntfidf=ntfidf,
+            neuc=neuc,
+            ic=ic,
             per_dimension=per_dimension,
         )
 
@@ -179,25 +128,9 @@ class EmbeddingMatchScorerAdapter(MatchScorerPort):
         self,
         left_text: str,
         right_text: str,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        left, right = await self._batch_embeddings([left_text, right_text])
+    ) -> tuple[list[float], list[float]]:
+        left, right = await self._embedding_client.embed([left_text, right_text])
         return left, right
-
-    async def _batch_embeddings(self, texts: list[str]) -> list[np.ndarray]:
-        if not texts:
-            return []
-        try:
-            response = await self._client.embeddings.create(
-                model=self._settings.embedding_model,
-                input=texts,
-            )
-        except APIError as exc:
-            raise MatchScorerError(
-                f"Embedding call failed on model "
-                f"'{self._settings.embedding_model}': {exc}"
-            ) from exc
-        ordered = sorted(response.data, key=lambda item: item.index)
-        return [np.asarray(item.embedding, dtype=float) for item in ordered]
 
     async def _score_dimensions(
         self,
@@ -211,9 +144,15 @@ class EmbeddingMatchScorerAdapter(MatchScorerPort):
             job_text = job_dimensions[dimension].strip()
             if not candidate_text or not job_text:
                 continue
-            candidate_vector, job_vector = await self._pair_embeddings(
-                sanitize_report_text(candidate_text),
-                sanitize_report_text(job_text),
+            try:
+                candidate_vector, job_vector = await self._pair_embeddings(
+                    sanitize_report_text(candidate_text),
+                    sanitize_report_text(job_text),
+                )
+            except EmbeddingClientError as exc:
+                raise MatchScorerError(str(exc)) from exc
+            per_dimension[dimension] = normalized_cosine(
+                candidate_vector,
+                job_vector,
             )
-            per_dimension[dimension] = _cosine(candidate_vector, job_vector)
         return per_dimension

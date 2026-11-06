@@ -15,6 +15,9 @@ from src.infrastructure.adapters.out.embedding_match_scorer_adapter import (
 from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
     LangGraphOrchestratorAdapter,
 )
+from src.infrastructure.adapters.out.openai_embedding_client import (
+    OpenAIEmbeddingClient,
+)
 from src.infrastructure.adapters.out.openai_llm_agent_adapter import (
     OpenAILLMAgentAdapter,
 )
@@ -57,14 +60,18 @@ def build_optimize_cv_use_case() -> OptimizeCVUseCase:
         max_tokens_by_role=settings.max_tokens_by_role(),
     )
     match_settings = MatchScoringSettings()
-    match_scorer = EmbeddingMatchScorerAdapter(
+    embedding_client = OpenAIEmbeddingClient(
         client=client,
+        model=match_settings.embedding_model,
+    )
+    match_scorer = EmbeddingMatchScorerAdapter(
+        embedding_client=embedding_client,
         settings=match_settings,
     )
     orchestrator = LangGraphOrchestratorAdapter(
         llm_agent,
         match_scorer=match_scorer,
-        r_total_target=match_settings.target_r_total,
+        ic_target=match_settings.target_ic,
         variance_threshold=audit_settings.variance_threshold,
     )
     return OptimizeCVService(orchestrator)

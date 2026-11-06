@@ -4,7 +4,7 @@ from src.domain.errors import InvalidUploadError
 
 MAX_VARIANCE_THRESHOLD = 0.45
 MAX_WRITER_ATTEMPTS = 3
-DEFAULT_R_TOTAL_TARGET = 0.85
+DEFAULT_IC_TARGET = 85.0
 
 
 class AuditDecision(Enum):

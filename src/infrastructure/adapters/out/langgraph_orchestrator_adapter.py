@@ -11,7 +11,7 @@ from src.application.ports.out.workflow_orchestrator_port import (
     WorkflowOrchestratorPort,
 )
 from src.domain.audit_rules import (
-    DEFAULT_R_TOTAL_TARGET,
+    DEFAULT_IC_TARGET,
     MAX_VARIANCE_THRESHOLD,
     MAX_WRITER_ATTEMPTS,
     AuditDecision,
@@ -132,7 +132,7 @@ def _build_analyzer_prompt(
     return (
         f"Job description:\n{state.job_description_text}\n"
         f"Profile:\n{state.extracted_profile}\n"
-        f"Baseline match (R_total={baseline_match.r_total:.3f}):\n"
+        f"Baseline match (IC={baseline_match.ic:.3f}):\n"
         f"{scorecard}\n"
         "Prioriza cerrar las brechas en las dimensiones con menor similitud."
     )
@@ -144,11 +144,11 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         llm_agent: LLMAgentPort,
         variance_threshold: float = MAX_VARIANCE_THRESHOLD,
         match_scorer: MatchScorerPort | None = None,
-        r_total_target: float = DEFAULT_R_TOTAL_TARGET,
+        ic_target: float = DEFAULT_IC_TARGET,
     ) -> None:
         self._llm_agent = llm_agent
         self._match_scorer = match_scorer
-        self._r_total_target = r_total_target
+        self._ic_target = ic_target
         self._variance_threshold = variance_threshold
         self._graph: CompiledStateGraph[SharedState] = self._build_graph()
 
@@ -164,6 +164,13 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             )
         )
 
+        baseline_match = final_state["baseline_match"]
+        original_ic = baseline_match.ic if baseline_match is not None else None
+        original_per_dimension = (
+            baseline_match.per_dimension
+            if baseline_match is not None
+            else {}
+        )
         if final_state["best_text"]:
             optimized = OptimizedCV(
                 content=final_state["best_text"],
@@ -171,8 +178,10 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
                 optimized_variance_score=final_state["best_variance"],
                 writer_attempts=final_state["writer_attempts"],
                 variance_threshold=self._variance_threshold,
-                r_total=final_state["best_r_total"],
-                per_dimension=final_state["best_per_dimension"],
+                original_ic=original_ic,
+                optimized_ic=final_state["best_ic"],
+                original_per_dimension=original_per_dimension,
+                optimized_per_dimension=final_state["best_per_dimension"],
                 gap_report=final_state["gap_analysis"],
             )
         else:
@@ -182,16 +191,20 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
                 optimized_variance_score=final_state["optimized_variance_score"],
                 writer_attempts=final_state["writer_attempts"],
                 variance_threshold=self._variance_threshold,
+                original_ic=original_ic,
+                original_per_dimension=original_per_dimension,
                 gap_report=final_state["gap_analysis"],
             )
         logger.info(
             "CV optimization finished: original_variance=%s "
-            "optimized_variance=%s attempts=%s within_threshold=%s r_total=%s",
+            "optimized_variance=%s attempts=%s within_threshold=%s "
+            "original_ic=%s optimized_ic=%s",
             optimized.original_variance_score,
             optimized.optimized_variance_score,
             optimized.writer_attempts,
             optimized.is_within_threshold(),
-            optimized.r_total,
+            optimized.original_ic,
+            optimized.optimized_ic,
         )
         return optimized
 
@@ -342,9 +355,9 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             else {},
         )
         updates["optimized_match"] = optimized_match
-        if state.best_text == "" or optimized_match.r_total > state.best_r_total:
+        if state.best_text == "" or optimized_match.ic > state.best_ic:
             updates["best_text"] = state.optimized_text
-            updates["best_r_total"] = optimized_match.r_total
+            updates["best_ic"] = optimized_match.ic
             updates["best_variance"] = optimized_variance_score
             updates["best_per_dimension"] = optimized_match.per_dimension
         return updates
@@ -358,7 +371,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             self._match_scorer is None
             or (
                 state.optimized_match is not None
-                and state.optimized_match.r_total >= self._r_total_target
+                and state.optimized_match.ic >= self._ic_target
             )
         )
         if (

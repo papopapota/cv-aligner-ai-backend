@@ -20,6 +20,6 @@ class SharedState:
     audit_reason: str = ""
     writer_attempts: int = 0
     best_text: str = ""
-    best_r_total: float = 0.0
+    best_ic: float = 0.0
     best_variance: float = 1.0
     best_per_dimension: dict[str, float] = field(default_factory=dict)

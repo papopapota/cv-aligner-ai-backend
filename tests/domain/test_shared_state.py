@@ -24,6 +24,7 @@ def test_starts_empty_with_a_variance_of_one_and_no_attempts() -> None:
     assert state.optimized_variance_score == 1.0
     assert state.audit_reason == ""
     assert state.writer_attempts == 0
+    assert state.best_ic == 0.0
 
 
 def test_is_mutable_so_nodes_can_write_into_it() -> None:
@@ -34,6 +35,8 @@ def test_is_mutable_so_nodes_can_write_into_it() -> None:
 
     state.extracted_profile = "profile"
     state.writer_attempts = 1
+    state.best_ic = 90.0
 
     assert state.extracted_profile == "profile"
     assert state.writer_attempts == 1
+    assert state.best_ic == 90.0

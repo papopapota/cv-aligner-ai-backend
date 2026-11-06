@@ -3,10 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 from src.application.ports.out.llm_agent_port import AgentRole
-from src.domain.audit_rules import (
-    DEFAULT_R_TOTAL_TARGET,
-    MAX_VARIANCE_THRESHOLD,
-)
+from src.domain.audit_rules import DEFAULT_IC_TARGET, MAX_VARIANCE_THRESHOLD
 
 
 class DBSettings(BaseSettings):
@@ -82,48 +79,32 @@ class MatchScoringSettings(BaseSettings):
         extra="ignore",
     )
 
-    target_r_total: float = DEFAULT_R_TOTAL_TARGET
-    lambda_s_cosine: float = 0.45
-    lambda_d_euclidean: float = 0.25
-    lambda_a_contextual: float = 0.30
+    target_ic: float = DEFAULT_IC_TARGET
+    weight_ncos: float = 0.50
+    weight_ntfidf: float = 0.30
+    weight_neuc: float = 0.20
     embedding_model: str = "text-embedding-3-small"
-    chunk_size: int = 512
 
-    @field_validator(
-        "lambda_s_cosine",
-        "lambda_d_euclidean",
-        "lambda_a_contextual",
-    )
+    @field_validator("weight_ncos", "weight_ntfidf", "weight_neuc")
     @classmethod
-    def _validate_lambda(cls, value: float) -> float:
+    def _validate_weight(cls, value: float) -> float:
         if not 0.0 <= value <= 1.0:
-            raise ValueError("Lambdas must be between 0 and 1.")
+            raise ValueError("IC weights must be between 0 and 1.")
         return value
 
-    @field_validator("chunk_size")
-    @classmethod
-    def _validate_chunk_size(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("chunk_size must be at least 1.")
-        return value
-
-    @field_validator("target_r_total")
+    @field_validator("target_ic")
     @classmethod
     def _validate_target(cls, value: float) -> float:
-        if not 0.0 <= value <= 1.0:
-            raise ValueError("target_r_total must be between 0 and 1.")
+        if not 0.0 <= value <= 100.0:
+            raise ValueError("target_ic must be between 0 and 100.")
         return value
 
     @model_validator(mode="after")
-    def _validate_lambda_balance(self) -> "MatchScoringSettings":
-        total = (
-            self.lambda_s_cosine
-            + self.lambda_d_euclidean
-            + self.lambda_a_contextual
-        )
+    def _validate_weight_balance(self) -> "MatchScoringSettings":
+        total = self.weight_ncos + self.weight_ntfidf + self.weight_neuc
         if abs(total - 1.0) > 1e-6:
             raise ValueError(
-                "Lambda weights must sum to 1 "
+                "IC weights must sum to 1 "
                 f"(got {total:.4f})."
             )
         return self

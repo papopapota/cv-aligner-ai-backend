@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.application.ports.out.llm_agent_port import AgentRole
-from src.domain.audit_rules import MAX_VARIANCE_THRESHOLD
+from src.domain.audit_rules import DEFAULT_IC_TARGET, MAX_VARIANCE_THRESHOLD
 from src.infrastructure.config import AuditSettings, LLMSettings, MatchScoringSettings
 
 
@@ -63,12 +63,11 @@ def test_audit_variance_threshold_can_be_overridden(
 
 def _clear_match_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for variable in (
-        "MATCH_TARGET_R_TOTAL",
-        "MATCH_LAMBDA_S_COSINE",
-        "MATCH_LAMBDA_D_EUCLIDEAN",
-        "MATCH_LAMBDA_A_CONTEXTUAL",
+        "MATCH_TARGET_IC",
+        "MATCH_WEIGHT_NCOS",
+        "MATCH_WEIGHT_NTFIDF",
+        "MATCH_WEIGHT_NEUC",
         "MATCH_EMBEDDING_MODEL",
-        "MATCH_CHUNK_SIZE",
     ):
         monkeypatch.delenv(variable, raising=False)
 
@@ -78,36 +77,37 @@ def test_match_scoring_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     settings = MatchScoringSettings(_env_file=None)  # type: ignore[call-arg]
 
-    assert settings.target_r_total == 0.85
-    assert settings.lambda_s_cosine == 0.45
-    assert settings.lambda_d_euclidean == 0.25
-    assert settings.lambda_a_contextual == 0.30
+    assert settings.target_ic == DEFAULT_IC_TARGET
+    assert settings.weight_ncos == 0.50
+    assert settings.weight_ntfidf == 0.30
+    assert settings.weight_neuc == 0.20
     assert settings.embedding_model == "text-embedding-3-small"
-    assert settings.chunk_size == 512
 
 
 def test_match_scoring_reads_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_match_env(monkeypatch)
-    monkeypatch.setenv("MATCH_TARGET_R_TOTAL", "0.8")
-    monkeypatch.setenv("MATCH_LAMBDA_S_COSINE", "0.5")
-    monkeypatch.setenv("MATCH_LAMBDA_D_EUCLIDEAN", "0.25")
-    monkeypatch.setenv("MATCH_LAMBDA_A_CONTEXTUAL", "0.25")
+    monkeypatch.setenv("MATCH_TARGET_IC", "80")
+    monkeypatch.setenv("MATCH_WEIGHT_NCOS", "0.5")
+    monkeypatch.setenv("MATCH_WEIGHT_NTFIDF", "0.25")
+    monkeypatch.setenv("MATCH_WEIGHT_NEUC", "0.25")
     monkeypatch.setenv("MATCH_EMBEDDING_MODEL", "custom-model")
 
     settings = MatchScoringSettings(_env_file=None)  # type: ignore[call-arg]
 
-    assert settings.target_r_total == 0.8
-    assert settings.lambda_s_cosine == 0.5
+    assert settings.target_ic == 80.0
+    assert settings.weight_ncos == 0.5
+    assert settings.weight_ntfidf == 0.25
+    assert settings.weight_neuc == 0.25
     assert settings.embedding_model == "custom-model"
 
 
-def test_match_scoring_rejects_lambdas_that_do_not_sum_to_one(
+def test_match_scoring_rejects_weights_that_do_not_sum_to_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_match_env(monkeypatch)
-    monkeypatch.setenv("MATCH_LAMBDA_S_COSINE", "0.6")
-    monkeypatch.setenv("MATCH_LAMBDA_D_EUCLIDEAN", "0.3")
-    monkeypatch.setenv("MATCH_LAMBDA_A_CONTEXTUAL", "0.2")
+    monkeypatch.setenv("MATCH_WEIGHT_NCOS", "0.6")
+    monkeypatch.setenv("MATCH_WEIGHT_NTFIDF", "0.3")
+    monkeypatch.setenv("MATCH_WEIGHT_NEUC", "0.2")
 
     with pytest.raises(ValidationError):
         MatchScoringSettings(_env_file=None)  # type: ignore[call-arg]
@@ -116,10 +116,10 @@ def test_match_scoring_rejects_lambdas_that_do_not_sum_to_one(
 @pytest.mark.parametrize(
     "variable",
     [
-        "MATCH_LAMBDA_S_COSINE",
-        "MATCH_LAMBDA_D_EUCLIDEAN",
-        "MATCH_LAMBDA_A_CONTEXTUAL",
-        "MATCH_TARGET_R_TOTAL",
+        "MATCH_WEIGHT_NCOS",
+        "MATCH_WEIGHT_NTFIDF",
+        "MATCH_WEIGHT_NEUC",
+        "MATCH_TARGET_IC",
     ],
 )
 def test_match_scoring_rejects_out_of_range_values(
@@ -133,11 +133,11 @@ def test_match_scoring_rejects_out_of_range_values(
         MatchScoringSettings(_env_file=None)  # type: ignore[call-arg]
 
 
-def test_match_scoring_rejects_a_non_positive_chunk_size(
+def test_match_scoring_rejects_an_ic_target_above_one_hundred(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_match_env(monkeypatch)
-    monkeypatch.setenv("MATCH_CHUNK_SIZE", "0")
+    monkeypatch.setenv("MATCH_TARGET_IC", "100.1")
 
     with pytest.raises(ValidationError):
         MatchScoringSettings(_env_file=None)  # type: ignore[call-arg]

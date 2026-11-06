@@ -1,12 +1,14 @@
 import io
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 
 import docx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from src.application.ports.out.match_scorer_port import MatchScorerPort
 from src.application.services.optimize_cv_service import OptimizeCVService
 from src.composition import build_optimize_cv_use_case
+from src.domain.compatibility_score import CompatibilityScore
 from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
     LangGraphOrchestratorAdapter,
 )
@@ -31,6 +33,33 @@ def _docx_bytes() -> bytes:
 
 def _build_client() -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+
+def _score(
+    ic: float,
+    per_dimension: dict[str, float] | None = None,
+) -> CompatibilityScore:
+    return CompatibilityScore(
+        ncos=min(ic / 100.0, 1.0),
+        ntfidf=0.0,
+        neuc=0.0,
+        ic=ic,
+        per_dimension=per_dimension or {},
+    )
+
+
+class _SequenceMatchScorer(MatchScorerPort):
+    def __init__(self, scores: list[CompatibilityScore]) -> None:
+        self._scores = iter(scores)
+
+    async def match(
+        self,
+        candidate_text: str,
+        job_text: str,
+        candidate_dimensions: Mapping[str, str],
+        job_dimensions: Mapping[str, str],
+    ) -> CompatibilityScore:
+        return next(self._scores)
 
 
 @pytest.fixture(autouse=True)
@@ -71,12 +100,48 @@ async def test_optimize_returns_the_audited_cv(client: AsyncClient) -> None:
     assert payload["optimized_variance_score"] == 0.1
     assert payload["writer_attempts"] == 2
     assert payload["is_within_threshold"] is True
-    assert payload["r_total"] is None
-    assert payload["per_dimension"] == {}
+    assert payload["original_ic"] is None
+    assert payload["optimized_ic"] is None
+    assert payload["original_per_dimension"] == {}
+    assert payload["optimized_per_dimension"] == {}
     assert payload["gap_report"]
-    assert payload["r_total"] is None
-    assert payload["per_dimension"] == {}
-    assert payload["gap_report"]
+
+
+async def test_optimize_returns_the_ic_before_and_after(
+    client: AsyncClient,
+) -> None:
+    app.dependency_overrides[build_optimize_cv_use_case] = lambda: (
+        OptimizeCVService(
+            LangGraphOrchestratorAdapter(
+                StubLLMAgentAdapter(variance_score=0.1),
+                match_scorer=_SequenceMatchScorer(
+                    [
+                        _score(61.0, {"technical_skills": 0.3}),
+                        _score(90.0, {"technical_skills": 0.9}),
+                    ]
+                ),
+            )
+        )
+    )
+
+    response = await client.post(
+        "/cv/optimize",
+        files={
+            "cv_file": ("cv.docx", _docx_bytes(), _DOCX_CONTENT_TYPE),
+            "job_description_file": (
+                "job.txt",
+                _JOB_DESCRIPTION.encode(),
+                _TXT_CONTENT_TYPE,
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["original_ic"] == 61.0
+    assert payload["optimized_ic"] == 90.0
+    assert payload["original_per_dimension"] == {"technical_skills": 0.3}
+    assert payload["optimized_per_dimension"] == {"technical_skills": 0.9}
 
 
 async def test_optimize_with_the_real_pdf_fixture(

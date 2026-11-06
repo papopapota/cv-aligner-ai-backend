@@ -68,14 +68,14 @@ def _orchestrator(
 
 
 def _score(
-    r_total: float,
+    ic: float,
     per_dimension: dict[str, float] | None = None,
 ) -> CompatibilityScore:
     return CompatibilityScore(
-        s_cosine=r_total,
-        d_euclidean=0.0,
-        a_contextual=0.0,
-        r_total=r_total,
+        ncos=min(ic / 100.0, 1.0),
+        ntfidf=0.0,
+        neuc=0.0,
+        ic=ic,
         per_dimension=per_dimension or {},
     )
 
@@ -111,8 +111,10 @@ async def test_runs_the_whole_graph_and_approves_a_low_variance() -> None:
     assert optimized.writer_attempts == 1
     assert optimized.is_within_threshold()
     assert optimized.content
-    assert optimized.r_total is None
-    assert optimized.per_dimension == {}
+    assert optimized.original_ic is None
+    assert optimized.optimized_ic is None
+    assert optimized.original_per_dimension == {}
+    assert optimized.optimized_per_dimension == {}
     assert optimized.gap_report == _GAP_TEXT
 
 
@@ -387,8 +389,8 @@ def test_rejects_text_without_any_usable_profile() -> None:
         parse_semantic_profile("I cannot extract a profile")
 
 
-async def test_approves_when_variance_and_r_total_meet_the_targets() -> None:
-    scorer = _FakeMatchScorer([_score(0.9), _score(0.9)])
+async def test_approves_when_variance_and_ic_meet_the_targets() -> None:
+    scorer = _FakeMatchScorer([_score(90.0), _score(90.0)])
     orchestrator = LangGraphOrchestratorAdapter(
         StubLLMAgentAdapter(variance_score=0.1),
         match_scorer=scorer,
@@ -408,8 +410,8 @@ async def test_approves_when_variance_and_r_total_meet_the_targets() -> None:
     }
 
 
-async def test_retries_when_the_r_total_is_below_the_target() -> None:
-    scorer = _FakeMatchScorer([_score(0.9), _score(0.5), _score(0.5), _score(0.5)])
+async def test_retries_when_the_ic_is_below_the_target() -> None:
+    scorer = _FakeMatchScorer([_score(90.0), _score(50.0), _score(50.0), _score(50.0)])
     orchestrator = LangGraphOrchestratorAdapter(
         StubLLMAgentAdapter(variance_score=0.1),
         match_scorer=scorer,
@@ -421,12 +423,12 @@ async def test_retries_when_the_r_total_is_below_the_target() -> None:
     assert len(scorer.calls) == 1 + MAX_WRITER_ATTEMPTS
 
 
-async def test_respects_a_custom_r_total_target() -> None:
-    scorer = _FakeMatchScorer([_score(0.9), _score(0.84)])
+async def test_respects_a_custom_ic_target() -> None:
+    scorer = _FakeMatchScorer([_score(90.0), _score(84.0)])
     orchestrator = LangGraphOrchestratorAdapter(
         StubLLMAgentAdapter(variance_score=0.1),
         match_scorer=scorer,
-        r_total_target=0.80,
+        ic_target=80.0,
     )
 
     optimized = await orchestrator.optimize(_candidate(), _job_description())
@@ -436,7 +438,7 @@ async def test_respects_a_custom_r_total_target() -> None:
 
 async def test_retries_when_the_variance_is_high_with_scoring_enabled() -> None:
     scorer = _FakeMatchScorer(
-        [_score(0.9), _score(0.9), _score(0.9), _score(0.9)]
+        [_score(90.0), _score(90.0), _score(90.0), _score(90.0)]
     )
     orchestrator = LangGraphOrchestratorAdapter(
         StubLLMAgentAdapter(variance_score=0.9),
@@ -458,7 +460,7 @@ async def test_feeds_the_analyzer_with_the_baseline_scorecard() -> None:
             return await super().complete(role, prompt)
 
     scorer = _FakeMatchScorer(
-        [_score(0.9, per_dimension={"technical_skills": 0.42}), _score(0.9)]
+        [_score(90.0, per_dimension={"technical_skills": 0.42}), _score(90.0)]
     )
     orchestrator = LangGraphOrchestratorAdapter(
         _Recorder(variance_score=0.1),
@@ -468,7 +470,7 @@ async def test_feeds_the_analyzer_with_the_baseline_scorecard() -> None:
     await orchestrator.optimize(_candidate(), _job_description())
 
     analysis_prompts = [
-        prompt for prompt in prompts if "Baseline match (R_total=" in prompt
+        prompt for prompt in prompts if "Baseline match (IC=" in prompt
     ]
     assert len(analysis_prompts) == 1
     analysis_prompt = analysis_prompts[0]
@@ -484,7 +486,7 @@ async def test_extracts_the_job_profile_with_an_extra_explorer_call() -> None:
             prompts.append(prompt)
             return await super().complete(role, prompt)
 
-    scorer = _FakeMatchScorer([_score(0.9), _score(0.9)])
+    scorer = _FakeMatchScorer([_score(90.0), _score(90.0)])
     orchestrator = LangGraphOrchestratorAdapter(
         _Recorder(variance_score=0.1),
         match_scorer=scorer,
@@ -502,7 +504,7 @@ async def test_extracts_the_job_profile_with_an_extra_explorer_call() -> None:
 
 
 async def test_tracks_the_best_version_while_retrying() -> None:
-    scorer = _FakeMatchScorer([_score(0.9), _score(0.7), _score(0.9), _score(0.6)])
+    scorer = _FakeMatchScorer([_score(90.0), _score(70.0), _score(90.0), _score(60.0)])
     stub = StubLLMAgentAdapter(
         variance_score=0.9,
         writer_outputs=["first version", "second version", "third version"],
@@ -517,7 +519,7 @@ async def test_tracks_the_best_version_while_retrying() -> None:
     )
 
     assert state["writer_attempts"] == MAX_WRITER_ATTEMPTS
-    assert state["best_r_total"] == 0.9
+    assert state["best_ic"] == 90.0
     assert state["best_text"] == "second version"
     assert state["best_variance"] == 0.9
 
@@ -525,10 +527,10 @@ async def test_tracks_the_best_version_while_retrying() -> None:
 async def test_returns_the_best_effort_version_with_its_breakdown() -> None:
     scorer = _FakeMatchScorer(
         [
-            _score(0.9),
-            _score(0.7),
-            _score(0.9, per_dimension={"technical_skills": 0.9}),
-            _score(0.6),
+            _score(90.0),
+            _score(70.0),
+            _score(90.0, per_dimension={"technical_skills": 0.9}),
+            _score(60.0),
         ]
     )
     stub = StubLLMAgentAdapter(
@@ -542,6 +544,28 @@ async def test_returns_the_best_effort_version_with_its_breakdown() -> None:
     assert optimized.content == "second version"
     assert optimized.optimized_variance_score == 0.9
     assert optimized.writer_attempts == MAX_WRITER_ATTEMPTS
-    assert optimized.r_total == 0.9
-    assert optimized.per_dimension == {"technical_skills": 0.9}
+    assert optimized.original_ic == 90.0
+    assert optimized.optimized_ic == 90.0
+    assert optimized.original_per_dimension == {}
+    assert optimized.optimized_per_dimension == {"technical_skills": 0.9}
     assert optimized.gap_report == _GAP_TEXT
+
+
+async def test_returns_the_ic_before_and_after_optimizing() -> None:
+    scorer = _FakeMatchScorer(
+        [
+            _score(61.0, per_dimension={"technical_skills": 0.3}),
+            _score(84.0, per_dimension={"technical_skills": 0.9}),
+        ]
+    )
+    orchestrator = LangGraphOrchestratorAdapter(
+        StubLLMAgentAdapter(variance_score=0.1),
+        match_scorer=scorer,
+    )
+
+    optimized = await orchestrator.optimize(_candidate(), _job_description())
+
+    assert optimized.original_ic == 61.0
+    assert optimized.optimized_ic == 84.0
+    assert optimized.original_per_dimension == {"technical_skills": 0.3}
+    assert optimized.optimized_per_dimension == {"technical_skills": 0.9}

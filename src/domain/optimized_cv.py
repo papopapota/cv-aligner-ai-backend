@@ -1,13 +1,15 @@
 from dataclasses import dataclass, field
 
 from src.domain.audit_rules import (
-    DEFAULT_R_TOTAL_TARGET,
+    DEFAULT_IC_TARGET,
     MAX_VARIANCE_THRESHOLD,
 )
 from src.domain.errors import InvalidUploadError
 
 _MIN_VARIANCE_SCORE = 0.0
 _MAX_VARIANCE_SCORE = 1.0
+_MIN_IC = 0.0
+_MAX_IC = 100.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,8 +19,10 @@ class OptimizedCV:
     optimized_variance_score: float
     writer_attempts: int
     variance_threshold: float = MAX_VARIANCE_THRESHOLD
-    r_total: float | None = None
-    per_dimension: dict[str, float] = field(default_factory=dict)
+    original_ic: float | None = None
+    optimized_ic: float | None = None
+    original_per_dimension: dict[str, float] = field(default_factory=dict)
+    optimized_per_dimension: dict[str, float] = field(default_factory=dict)
     gap_report: str = ""
 
     def __post_init__(self) -> None:
@@ -42,17 +46,25 @@ class OptimizedCV:
             raise InvalidUploadError(
                 "The optimized variance score must be between 0 and 1."
             )
-        if self.r_total is not None and not (
-            _MIN_VARIANCE_SCORE <= self.r_total <= _MAX_VARIANCE_SCORE
+        for name, ic in (
+            ("original", self.original_ic),
+            ("optimized", self.optimized_ic),
         ):
-            raise InvalidUploadError("The R_total must be between 0 and 1.")
-        if any(
-            not _MIN_VARIANCE_SCORE <= score <= _MAX_VARIANCE_SCORE
-            for score in self.per_dimension.values()
+            if ic is not None and not (_MIN_IC <= ic <= _MAX_IC):
+                raise InvalidUploadError(
+                    f"The {name} IC must be between 0 and 100."
+                )
+        for name, per_dimension in (
+            ("original", self.original_per_dimension),
+            ("optimized", self.optimized_per_dimension),
         ):
-            raise InvalidUploadError(
-                "Each dimension score must be between 0 and 1."
-            )
+            if any(
+                not _MIN_VARIANCE_SCORE <= score <= _MAX_VARIANCE_SCORE
+                for score in per_dimension.values()
+            ):
+                raise InvalidUploadError(
+                    f"Each {name} dimension score must be between 0 and 1."
+                )
         if self.writer_attempts < 1:
             raise InvalidUploadError("The writer must run at least once.")
 
@@ -60,8 +72,8 @@ class OptimizedCV:
         variance_passed = (
             self.optimized_variance_score <= self.variance_threshold
         )
-        r_total_passed = (
-            self.r_total is None
-            or self.r_total >= DEFAULT_R_TOTAL_TARGET
+        ic_passed = (
+            self.optimized_ic is None
+            or self.optimized_ic >= DEFAULT_IC_TARGET
         )
-        return variance_passed and r_total_passed
+        return variance_passed and ic_passed
