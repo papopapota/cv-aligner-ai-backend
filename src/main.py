@@ -16,7 +16,11 @@ from src.infrastructure.adapters.inbound.api.cv_optimize_controller import (
 from src.infrastructure.adapters.inbound.api.domain_error_handler import (
     handle_invalid_upload,
 )
+from src.infrastructure.adapters.inbound.api.routers.application_router import (
+    router as application_router,
+)
 from src.infrastructure.adapters.inbound.api.routers.auth_router import router as auth_router
+from src.infrastructure.config import CORSSettings
 from src.infrastructure.database import dispose_engine
 
 logging.basicConfig(level=logging.INFO)
@@ -39,10 +43,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=CORSSettings().allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,6 +54,7 @@ app.add_exception_handler(InvalidUploadError, handle_invalid_upload)
 app.include_router(cv_router)
 app.include_router(cv_optimize_router)
 app.include_router(auth_router, prefix="/auth")
+app.include_router(application_router)
 
 
 @app.get("/health")

@@ -112,3 +112,19 @@ class MatchScoringSettings(BaseSettings):
 
 class LLMConfigurationError(RuntimeError):
     pass
+
+
+class CORSSettings(BaseSettings):
+    """CORS configuration driven by the ``CORS_ORIGINS`` environment variable."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CORS_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @property
+    def allow_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.origins.split(",") if origin.strip()]
