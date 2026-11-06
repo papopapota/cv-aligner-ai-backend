@@ -48,9 +48,14 @@ def test_build_optimize_use_case_wires_the_audit_threshold(
     def _spy(
         llm_agent: LLMAgentPort,
         variance_threshold: float = 0.35,
+        **kwargs: object,
     ) -> LangGraphOrchestratorAdapter:
         captured["variance_threshold"] = variance_threshold
-        return real_factory(llm_agent, variance_threshold=variance_threshold)
+        return real_factory(
+            llm_agent,
+            variance_threshold=variance_threshold,
+            **kwargs,  # type: ignore[arg-type]
+        )
 
     monkeypatch.setattr(
         composition,
@@ -62,3 +67,37 @@ def test_build_optimize_use_case_wires_the_audit_threshold(
     build_optimize_cv_use_case.cache_clear()
 
     assert captured["variance_threshold"] == 0.5
+
+
+def test_build_optimize_use_case_wires_the_ic_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("MATCH_TARGET_IC", "90")
+    build_optimize_cv_use_case.cache_clear()
+
+    captured: dict[str, float] = {}
+    real_factory = LangGraphOrchestratorAdapter
+
+    def _spy(
+        llm_agent: LLMAgentPort,
+        variance_threshold: float = 0.35,
+        **kwargs: object,
+    ) -> LangGraphOrchestratorAdapter:
+        captured["ic_target"] = kwargs["ic_target"]  # type: ignore[assignment]
+        return real_factory(
+            llm_agent,
+            variance_threshold=variance_threshold,
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+    monkeypatch.setattr(
+        composition,
+        "LangGraphOrchestratorAdapter",
+        _spy,
+    )
+
+    composition.build_optimize_cv_use_case()
+    build_optimize_cv_use_case.cache_clear()
+
+    assert captured["ic_target"] == 90.0

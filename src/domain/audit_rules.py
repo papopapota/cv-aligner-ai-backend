@@ -2,8 +2,9 @@ from enum import Enum
 
 from src.domain.errors import InvalidUploadError
 
-MAX_VARIANCE_THRESHOLD = 0.35
+MAX_VARIANCE_THRESHOLD = 0.45
 MAX_WRITER_ATTEMPTS = 3
+DEFAULT_IC_TARGET = 85.0
 
 
 class AuditDecision(Enum):

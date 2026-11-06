@@ -1,8 +1,9 @@
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 from src.application.ports.out.llm_agent_port import AgentRole
-from src.domain.audit_rules import MAX_VARIANCE_THRESHOLD
+from src.domain.audit_rules import DEFAULT_IC_TARGET, MAX_VARIANCE_THRESHOLD
 
 
 class DBSettings(BaseSettings):
@@ -69,6 +70,44 @@ class LLMSettings(BaseSettings):
         if self.auditor_max_tokens is not None:
             overrides[AgentRole.AUDITOR] = self.auditor_max_tokens
         return overrides
+
+
+class MatchScoringSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="MATCH_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    target_ic: float = DEFAULT_IC_TARGET
+    weight_ncos: float = 0.50
+    weight_ntfidf: float = 0.30
+    weight_neuc: float = 0.20
+    embedding_model: str = "text-embedding-3-small"
+
+    @field_validator("weight_ncos", "weight_ntfidf", "weight_neuc")
+    @classmethod
+    def _validate_weight(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("IC weights must be between 0 and 1.")
+        return value
+
+    @field_validator("target_ic")
+    @classmethod
+    def _validate_target(cls, value: float) -> float:
+        if not 0.0 <= value <= 100.0:
+            raise ValueError("target_ic must be between 0 and 100.")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_weight_balance(self) -> "MatchScoringSettings":
+        total = self.weight_ncos + self.weight_ntfidf + self.weight_neuc
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(
+                "IC weights must sum to 1 "
+                f"(got {total:.4f})."
+            )
+        return self
 
 
 class LLMConfigurationError(RuntimeError):

@@ -163,3 +163,28 @@ async def test_wraps_http_errors_with_the_role_and_model() -> None:
 
     with pytest.raises(LLMError, match="writer.*gpt-test"):
         await adapter.complete(AgentRole.WRITER, "optimize")
+
+
+async def test_extractor_prompt_demands_a_strict_json_profile() -> None:
+    adapter, captured = _build_adapter(
+        lambda request: httpx2.Response(
+            200,
+            json=_completion_response("answer"),
+        )
+    )
+
+    await adapter.complete(AgentRole.EXTRACTOR, "input text")
+
+    body = json.loads(captured[0].content)
+    system = body["messages"][0]["content"]
+    for key in (
+        "summary",
+        "technical_skills",
+        "experience",
+        "education",
+        "certifications",
+        "languages",
+    ):
+        assert f'"{key}"' in system
+    assert "ÚNICAMENTE con un JSON" in system
+    assert "género" in system and "fotografía" in system

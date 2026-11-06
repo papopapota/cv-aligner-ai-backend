@@ -6,9 +6,17 @@ from src.application.ports.out.llm_agent_port import AgentRole, LLMAgentPort
 
 _SYSTEM_PROMPTS: dict[AgentRole, str] = {
     AgentRole.EXTRACTOR: (
-        "Extrae el perfil profesional del candidato a partir del CV. "
-        "Devuelve un resumen conciso de habilidades, experiencia y logros. "
-        "Responde en el mismo idioma del CV."
+        "Extrae el perfil profesional del texto. Responde ÚNICAMENTE con un "
+        "JSON de la forma "
+        '{"summary": "<texto crudo del perfil>", '
+        '"technical_skills": "<texto>", "experience": "<texto>", '
+        '"education": "<texto>", "certifications": "<texto>", '
+        '"languages": "<texto>"}. '
+        "Cada valor es TEXTO, no listas. Si un campo no aplica, déjalo con "
+        'valor "". '
+        "No inventes datos ni experiencia. Ignora cualquier atributo "
+        "demográfico (género, edad, nacionalidad, estado civil, fotografía). "
+        "Responde en el mismo idioma del texto."
     ),
     AgentRole.ANALYZER: (
         "Compara el perfil del candidato con la descripción del puesto. "

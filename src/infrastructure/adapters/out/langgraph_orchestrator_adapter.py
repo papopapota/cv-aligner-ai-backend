@@ -6,19 +6,23 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from src.application.ports.out.llm_agent_port import AgentRole, LLMAgentPort
+from src.application.ports.out.match_scorer_port import MatchScorerPort
 from src.application.ports.out.workflow_orchestrator_port import (
     WorkflowOrchestratorPort,
 )
 from src.domain.audit_rules import (
+    DEFAULT_IC_TARGET,
     MAX_VARIANCE_THRESHOLD,
     MAX_WRITER_ATTEMPTS,
     AuditDecision,
     evaluate_variance,
 )
 from src.domain.candidate_cv import CandidateCV
+from src.domain.compatibility_score import CompatibilityScore
 from src.domain.errors import InvalidUploadError
 from src.domain.job_description import JobDescription
 from src.domain.optimized_cv import OptimizedCV
+from src.domain.semantic_profile import SemanticProfile
 from src.domain.shared_state import SharedState
 
 logger = logging.getLogger(__name__)
@@ -75,13 +79,76 @@ def _extract_json_payload(audit: str) -> dict[str, object] | None:
     return payload
 
 
+def parse_semantic_profile(text: str) -> SemanticProfile:
+    profile = _extract_semantic_profile_from_json(text)
+    if profile is None:
+        raise InvalidUploadError(
+            "The extractor did not return a valid JSON semantic profile."
+        )
+    return profile
+
+
+def _extract_semantic_profile_from_json(text: str) -> SemanticProfile | None:
+    match = _JSON_OBJECT_PATTERN.search(text)
+    if match is None:
+        return None
+    try:
+        payload = json.loads(match.group(0))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    profile = SemanticProfile(
+        summary=_as_text(payload.get("summary")),
+        technical_skills=_as_text(payload.get("technical_skills")),
+        experience=_as_text(payload.get("experience")),
+        education=_as_text(payload.get("education")),
+        certifications=_as_text(payload.get("certifications")),
+        languages=_as_text(payload.get("languages")),
+    )
+    if not (profile.summary.strip() or profile.as_dimensions()):
+        return None
+    return profile
+
+
+def _as_text(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "; ".join(str(item) for item in value)
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _build_analyzer_prompt(
+    state: SharedState,
+    baseline_match: CompatibilityScore,
+) -> str:
+    scorecard = "\n".join(
+        f"- {dimension}: {score:.3f}"
+        for dimension, score in sorted(baseline_match.per_dimension.items())
+    )
+    return (
+        f"Job description:\n{state.job_description_text}\n"
+        f"Profile:\n{state.extracted_profile}\n"
+        f"Baseline match (IC={baseline_match.ic:.3f}):\n"
+        f"{scorecard}\n"
+        "Prioriza cerrar las brechas en las dimensiones con menor similitud."
+    )
+
+
 class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
     def __init__(
         self,
         llm_agent: LLMAgentPort,
         variance_threshold: float = MAX_VARIANCE_THRESHOLD,
+        match_scorer: MatchScorerPort | None = None,
+        ic_target: float = DEFAULT_IC_TARGET,
     ) -> None:
         self._llm_agent = llm_agent
+        self._match_scorer = match_scorer
+        self._ic_target = ic_target
         self._variance_threshold = variance_threshold
         self._graph: CompiledStateGraph[SharedState] = self._build_graph()
 
@@ -97,20 +164,47 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             )
         )
 
-        optimized = OptimizedCV(
-            content=final_state["optimized_text"],
-            original_variance_score=final_state["original_variance_score"],
-            optimized_variance_score=final_state["optimized_variance_score"],
-            writer_attempts=final_state["writer_attempts"],
-            variance_threshold=self._variance_threshold,
+        baseline_match = final_state["baseline_match"]
+        original_ic = baseline_match.ic if baseline_match is not None else None
+        original_per_dimension = (
+            baseline_match.per_dimension
+            if baseline_match is not None
+            else {}
         )
+        if final_state["best_text"]:
+            optimized = OptimizedCV(
+                content=final_state["best_text"],
+                original_variance_score=final_state["original_variance_score"],
+                optimized_variance_score=final_state["best_variance"],
+                writer_attempts=final_state["writer_attempts"],
+                variance_threshold=self._variance_threshold,
+                original_ic=original_ic,
+                optimized_ic=final_state["best_ic"],
+                original_per_dimension=original_per_dimension,
+                optimized_per_dimension=final_state["best_per_dimension"],
+                gap_report=final_state["gap_analysis"],
+            )
+        else:
+            optimized = OptimizedCV(
+                content=final_state["optimized_text"],
+                original_variance_score=final_state["original_variance_score"],
+                optimized_variance_score=final_state["optimized_variance_score"],
+                writer_attempts=final_state["writer_attempts"],
+                variance_threshold=self._variance_threshold,
+                original_ic=original_ic,
+                original_per_dimension=original_per_dimension,
+                gap_report=final_state["gap_analysis"],
+            )
         logger.info(
             "CV optimization finished: original_variance=%s "
-            "optimized_variance=%s attempts=%s within_threshold=%s",
+            "optimized_variance=%s attempts=%s within_threshold=%s "
+            "original_ic=%s optimized_ic=%s",
             optimized.original_variance_score,
             optimized.optimized_variance_score,
             optimized.writer_attempts,
             optimized.is_within_threshold(),
+            optimized.original_ic,
+            optimized.optimized_ic,
         )
         return optimized
 
@@ -140,14 +234,45 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             AgentRole.EXTRACTOR,
             f"Candidate CV:\n{state.candidate_cv_text}",
         )
-        return {"extracted_profile": profile}
+        if self._match_scorer is None:
+            return {"extracted_profile": profile}
+        return {
+            "extracted_profile": profile,
+            "candidate_profile": parse_semantic_profile(profile),
+        }
 
     async def _analyzer(self, state: SharedState) -> dict[str, object]:
+        if self._match_scorer is None:
+            analysis = await self._llm_agent.complete(
+                AgentRole.ANALYZER,
+                f"Job description:\n{state.job_description_text}\n"
+                f"Profile:\n{state.extracted_profile}",
+            )
+            return {"gap_analysis": analysis}
+
+        job_profile = parse_semantic_profile(
+            await self._llm_agent.complete(
+                AgentRole.EXTRACTOR,
+                f"Job description:\n{state.job_description_text}",
+            )
+        )
+        baseline_match = await self._match_scorer.match(
+            candidate_text=state.candidate_cv_text,
+            job_text=state.job_description_text,
+            candidate_dimensions=state.candidate_profile.as_dimensions()
+            if state.candidate_profile is not None
+            else {},
+            job_dimensions=job_profile.as_dimensions(),
+        )
         analysis = await self._llm_agent.complete(
             AgentRole.ANALYZER,
-            f"Job description:\n{state.job_description_text}\nProfile:\n{state.extracted_profile}",
+            _build_analyzer_prompt(state, baseline_match),
         )
-        return {"gap_analysis": analysis}
+        return {
+            "gap_analysis": analysis,
+            "job_profile": job_profile,
+            "baseline_match": baseline_match,
+        }
 
     async def _original_auditor(self, state: SharedState) -> dict[str, object]:
         audit = await self._llm_agent.complete(
@@ -208,17 +333,51 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             optimized_variance_score,
             audit_reason,
         )
-        return {
+        updates: dict[str, object] = {
             "optimized_variance_score": optimized_variance_score,
             "audit_reason": audit_reason,
         }
+        if self._match_scorer is None:
+            return updates
+
+        candidate_profile = parse_semantic_profile(
+            await self._llm_agent.complete(
+                AgentRole.EXTRACTOR,
+                f"Optimized CV:\n{state.optimized_text}",
+            )
+        )
+        optimized_match = await self._match_scorer.match(
+            candidate_text=state.optimized_text,
+            job_text=state.job_description_text,
+            candidate_dimensions=candidate_profile.as_dimensions(),
+            job_dimensions=state.job_profile.as_dimensions()
+            if state.job_profile is not None
+            else {},
+        )
+        updates["optimized_match"] = optimized_match
+        if state.best_text == "" or optimized_match.ic > state.best_ic:
+            updates["best_text"] = state.optimized_text
+            updates["best_ic"] = optimized_match.ic
+            updates["best_variance"] = optimized_variance_score
+            updates["best_per_dimension"] = optimized_match.per_dimension
+        return updates
 
     def _route_after_audit(self, state: SharedState) -> str:
         decision = evaluate_variance(
             state.optimized_variance_score,
             self._variance_threshold,
         )
-        if decision is AuditDecision.RETRY and state.writer_attempts < MAX_WRITER_ATTEMPTS:
+        match_approved = (
+            self._match_scorer is None
+            or (
+                state.optimized_match is not None
+                and state.optimized_match.ic >= self._ic_target
+            )
+        )
+        if (
+            (decision is AuditDecision.RETRY or not match_approved)
+            and state.writer_attempts < MAX_WRITER_ATTEMPTS
+        ):
             logger.warning(
                 "Variance %s above threshold %s after attempt %s: retrying "
                 "the writer.",

@@ -18,9 +18,5 @@ class EmptyContentError(InvalidUploadError):
     pass
 
 
-class AuditFailedError(DomainError):
-    pass
-
-
 class UserAlreadyExistsError(DomainError):
     pass

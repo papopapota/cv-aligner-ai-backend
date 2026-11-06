@@ -1,6 +1,7 @@
 import pytest
 
 from src.domain.audit_rules import (
+    DEFAULT_IC_TARGET,
     MAX_VARIANCE_THRESHOLD,
     MAX_WRITER_ATTEMPTS,
     AuditDecision,
@@ -14,7 +15,7 @@ def test_approves_a_score_within_the_threshold(score: float) -> None:
     assert evaluate_variance(score) is AuditDecision.APPROVED
 
 
-@pytest.mark.parametrize("score", [0.36, 0.5, 1.0])
+@pytest.mark.parametrize("score", [0.46, 0.5, 1.0])
 def test_retries_a_score_above_the_threshold(score: float) -> None:
     assert evaluate_variance(score) is AuditDecision.RETRY
 
@@ -36,3 +37,7 @@ def test_uses_a_custom_threshold() -> None:
 
 def test_the_writer_attempt_cap_is_positive() -> None:
     assert MAX_WRITER_ATTEMPTS >= 1
+
+
+def test_the_ic_target_is_a_valid_ic() -> None:
+    assert 0.0 <= DEFAULT_IC_TARGET <= 100.0

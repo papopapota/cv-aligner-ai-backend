@@ -9,8 +9,14 @@ from src.application.services.upload_cv_service import UploadCVService
 from src.infrastructure.adapters.out.document_parser_adapter import (
     DocumentParserAdapter,
 )
+from src.infrastructure.adapters.out.embedding_match_scorer_adapter import (
+    EmbeddingMatchScorerAdapter,
+)
 from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
     LangGraphOrchestratorAdapter,
+)
+from src.infrastructure.adapters.out.openai_embedding_client import (
+    OpenAIEmbeddingClient,
 )
 from src.infrastructure.adapters.out.openai_llm_agent_adapter import (
     OpenAILLMAgentAdapter,
@@ -19,6 +25,7 @@ from src.infrastructure.config import (
     AuditSettings,
     LLMConfigurationError,
     LLMSettings,
+    MatchScoringSettings,
 )
 
 
@@ -52,8 +59,19 @@ def build_optimize_cv_use_case() -> OptimizeCVUseCase:
         max_tokens=settings.max_tokens,
         max_tokens_by_role=settings.max_tokens_by_role(),
     )
+    match_settings = MatchScoringSettings()
+    embedding_client = OpenAIEmbeddingClient(
+        client=client,
+        model=match_settings.embedding_model,
+    )
+    match_scorer = EmbeddingMatchScorerAdapter(
+        embedding_client=embedding_client,
+        settings=match_settings,
+    )
     orchestrator = LangGraphOrchestratorAdapter(
         llm_agent,
+        match_scorer=match_scorer,
+        ic_target=match_settings.target_ic,
         variance_threshold=audit_settings.variance_threshold,
     )
     return OptimizeCVService(orchestrator)

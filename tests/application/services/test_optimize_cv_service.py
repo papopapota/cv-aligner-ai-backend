@@ -1,11 +1,7 @@
 from unittest.mock import AsyncMock
 
-import pytest
-
 from src.application.services.optimize_cv_service import OptimizeCVService
-from src.domain.audit_rules import MAX_VARIANCE_THRESHOLD
 from src.domain.candidate_cv import CandidateCV
-from src.domain.errors import AuditFailedError
 from src.domain.job_description import JobDescription
 from src.domain.optimized_cv import OptimizedCV
 from src.domain.uploaded_file_metadata import UploadedFileMetadata
@@ -79,29 +75,30 @@ async def test_exports_the_optimized_cv() -> None:
 
     exporter.export.assert_awaited_once_with(optimized)
 
-
-async def test_does_not_export_when_the_audit_fails() -> None:
-    service, _, exporter = _service(_optimized_cv(optimized_variance_score=0.9))
+async def test_exports_even_when_the_audit_does_not_converge() -> None:
+    optimized = _optimized_cv(optimized_variance_score=0.9)
+    service, _, exporter = _service(optimized)
     candidate = _candidate()
     job_description = _job_description()
 
-    with pytest.raises(AuditFailedError):
-        await service.execute(candidate, job_description)
+    result = await service.execute(candidate, job_description)
 
-    exporter.export.assert_not_awaited()
+    assert result is optimized
+    exporter.export.assert_awaited_once_with(optimized)
 
 
-async def test_raises_when_the_variance_stays_above_the_threshold() -> None:
-    service, _, _ = _service(
-        _optimized_cv(
-            optimized_variance_score=MAX_VARIANCE_THRESHOLD + 0.01
-        )
+async def test_returns_the_best_effort_cv_without_an_exporter() -> None:
+    orchestrator = AsyncMock()
+    orchestrator.optimize.return_value = _optimized_cv(
+        optimized_variance_score=0.9
     )
+    service = OptimizeCVService(orchestrator)
     candidate = _candidate()
     job_description = _job_description()
 
-    with pytest.raises(AuditFailedError):
-        await service.execute(candidate, job_description)
+    result = await service.execute(candidate, job_description)
+
+    assert result.optimized_variance_score == 0.9
 
 
 async def test_does_not_fail_when_only_the_original_variance_is_high() -> None:
@@ -112,17 +109,6 @@ async def test_does_not_fail_when_only_the_original_variance_is_high() -> None:
     result = await service.execute(candidate, job_description)
 
     assert result.original_variance_score == 0.9
-
-
-async def test_the_failure_message_reports_the_attempts() -> None:
-    service, _, _ = _service(
-        _optimized_cv(optimized_variance_score=0.9, writer_attempts=3)
-    )
-    candidate = _candidate()
-    job_description = _job_description()
-
-    with pytest.raises(AuditFailedError, match="3 attempts"):
-        await service.execute(candidate, job_description)
 
 
 async def test_works_without_an_exporter() -> None:

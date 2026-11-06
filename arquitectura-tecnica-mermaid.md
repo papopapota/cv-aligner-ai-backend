@@ -23,15 +23,16 @@ flowchart TB
         end
 
         subgraph Domain["NÚCLEO DE DOMINIO"]
-            State["SharedState / Context<br/>(original_variance_score,<br/>optimized_variance_score)"]
-            AuditRules["Reglas de Auditoría<br/>(Filtro de Varianza)"]
-            Entities["Entidades:<br/>CandidateCV, JobDescription, OptimizedCV"]
+            State["SharedState / Context<br/>(original_variance_score,<br/>optimized_variance_score, IC)"]
+            AuditRules["Reglas de Auditoría & Umbrales<br/>(IC >= threshold, Filtro Varianza)"]
+            Entities["Entidades & Value Objects:<br/>CandidateCV, JobDescription, OptimizedCV,<br/>CompatibilityScore (Ncos, Ntfidf, Neuc, IC)"]
         end
 
         subgraph PortsOut["PUERTOS OUT<br/>src/application/ports/out"]
             P_Parser["CVParserPort"]
             P_Graph["WorkflowOrchestratorPort"]
             P_LLM["LLMAgentPort"]
+            P_Scorer["MatchScorerPort<br/>(Embeddings + TF-IDF)"]
             P_Vector["VectorStorePort (RAG)"]
             P_Export["DocumentExporterPort"]
         end
@@ -55,20 +56,24 @@ flowchart TB
             direction TB
             LG_Engine["LangGraph StateGraph Engine"]
             NodeExt["Nodo: Agente Extractor"]
-            NodeAna["Nodo: Agente Analizador"]
-            NodeOrigAud["Nodo: Auditor CV Original"]
+            NodeAna["Nodo: Agente Analizador<br/>(Calcula IC Inicial - Baseline)"]
+            NodeOrigAud["Nodo: Auditor CV Original<br/>(Calcula Varianza Inicial)"]
             NodeWri["Nodo: Agente Redactor"]
-            NodeAud["Nodo: Auditor CV Optimizado"]
-            EdgeCond{"Filtro de Varianza<br/>(Retry / Approved)"}
+            NodeAud["Nodo: Agente Auditor<br/>(Calcula IC Optimizado + Varianza)"]
+            EdgeCond{"Evaluación Auditor<br/>(IC >= Umbral & Varianza OK)"}
 
             LG_Engine --> NodeExt --> NodeAna --> NodeWri
             LG_Engine --> NodeOrigAud --> NodeWri
             NodeWri --> NodeAud --> EdgeCond
-            EdgeCond -- "Retry" --> NodeWri
+            EdgeCond -- "Retry (IC bajo / Desvío)" --> NodeWri
         end
 
-        subgraph AdapterLLM["Adaptador Modelos"]
+        subgraph AdapterLLM["Adaptador Modelos Generativos"]
             LLM_API["OpenAI / Anthropic / Local LLM"]
+        end
+
+        subgraph AdapterScorer["Adaptador Cálculo de Compatibilidad (Li et al., 2025)"]
+            ScorerEngine["Compatibility Scorer<br/>• Embeddings densos (Ncos)<br/>• TF-IDF léxico (Ntfidf)<br/>• Distancia euclidiana normalizada (Neuc)<br/>• Índice ponderado IC [0,100]"]
         end
 
         subgraph AdapterRAG["Adaptador Base de Datos Vectorial"]
@@ -87,15 +92,18 @@ flowchart TB
     P_Parser -. Implementado por .-> PDFParser
     P_Graph -. Implementado por .-> LG_Engine
     P_LLM -. Implementado por .-> LLM_API
+    P_Scorer -. Implementado por .-> ScorerEngine
     P_Vector -. Implementado por .-> VDB
     P_Export -. Implementado por .-> DocGen
 
-    %% Interacciones de los Nodos de Infraestructura con Servicios Externos
+    %% Interacciones de los Nodos con Servicios e Infraestructura
     NodeExt -. Usa .-> LLM_API
+    NodeAna -. Usa .-> ScorerEngine
     NodeAna -. Usa .-> LLM_API
     NodeOrigAud -. Evalúa CV original .-> LLM_API
     NodeWri -. Contexto RAG .-> VDB
     NodeWri -. Genera borrador .-> LLM_API
-    NodeAud -. Evalúa CV optimizado .-> LLM_API
+    NodeAud -. Evalúa match .-> ScorerEngine
+    NodeAud -. Audita consistencia .-> LLM_API
     EdgeCond -- "Approved" --> DocGen
 ```
