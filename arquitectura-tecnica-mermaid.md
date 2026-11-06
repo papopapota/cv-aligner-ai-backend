@@ -23,16 +23,16 @@ flowchart TB
         end
 
         subgraph Domain["NÚCLEO DE DOMINIO"]
-            State["SharedState / Context<br/>(original_variance_score,<br/>optimized_variance_score, R_total)"]
-            AuditRules["Reglas de Auditoría & Umbrales<br/>(R_total >= threshold, Filtro Varianza)"]
-            Entities["Entidades & Value Objects:<br/>CandidateCV, JobDescription, OptimizedCV,<br/>CompatibilityScore (Scosine, Deuclid, Acontext, Rtotal)"]
+            State["SharedState / Context<br/>(original_variance_score,<br/>optimized_variance_score, IC)"]
+            AuditRules["Reglas de Auditoría & Umbrales<br/>(IC >= threshold, Filtro Varianza)"]
+            Entities["Entidades & Value Objects:<br/>CandidateCV, JobDescription, OptimizedCV,<br/>CompatibilityScore (Ncos, Ntfidf, Neuc, IC)"]
         end
 
         subgraph PortsOut["PUERTOS OUT<br/>src/application/ports/out"]
             P_Parser["CVParserPort"]
             P_Graph["WorkflowOrchestratorPort"]
             P_LLM["LLMAgentPort"]
-            P_Scorer["MatchScorerPort (Ec. 1-5)<br/>(Embeddings + PyTorch Attention)"]
+            P_Scorer["MatchScorerPort<br/>(Embeddings + TF-IDF)"]
             P_Vector["VectorStorePort (RAG)"]
             P_Export["DocumentExporterPort"]
         end
@@ -56,16 +56,16 @@ flowchart TB
             direction TB
             LG_Engine["LangGraph StateGraph Engine"]
             NodeExt["Nodo: Agente Extractor"]
-            NodeAna["Nodo: Agente Analizador<br/>(Calcula R_total Inicial - Baseline)"]
+            NodeAna["Nodo: Agente Analizador<br/>(Calcula IC Inicial - Baseline)"]
             NodeOrigAud["Nodo: Auditor CV Original<br/>(Calcula Varianza Inicial)"]
             NodeWri["Nodo: Agente Redactor"]
-            NodeAud["Nodo: Agente Auditor<br/>(Calcula R_total Optimizado + Varianza)"]
-            EdgeCond{"Evaluación Auditor<br/>(R_total >= Umbral & Varianza OK)"}
+            NodeAud["Nodo: Agente Auditor<br/>(Calcula IC Optimizado + Varianza)"]
+            EdgeCond{"Evaluación Auditor<br/>(IC >= Umbral & Varianza OK)"}
 
             LG_Engine --> NodeExt --> NodeAna --> NodeWri
             LG_Engine --> NodeOrigAud --> NodeWri
             NodeWri --> NodeAud --> EdgeCond
-            EdgeCond -- "Retry (R_total bajo / Desvío)" --> NodeWri
+            EdgeCond -- "Retry (IC bajo / Desvío)" --> NodeWri
         end
 
         subgraph AdapterLLM["Adaptador Modelos Generativos"]
@@ -73,7 +73,7 @@ flowchart TB
         end
 
         subgraph AdapterScorer["Adaptador Cálculo de Compatibilidad (Li et al., 2025)"]
-            ScorerEngine["ResumeJobMatcher<br/>• Ec 1: Embeddings L2<br/>• Ec 2: Deuclidean<br/>• Ec 3: Scosine ponderado<br/>• Ec 4: Cross-Attention (Q, K, V)<br/>• Ec 5: Índice R_total"]
+            ScorerEngine["Compatibility Scorer<br/>• Embeddings densos (Ncos)<br/>• TF-IDF léxico (Ntfidf)<br/>• Distancia euclidiana normalizada (Neuc)<br/>• Índice ponderado IC [0,100]"]
         end
 
         subgraph AdapterRAG["Adaptador Base de Datos Vectorial"]
