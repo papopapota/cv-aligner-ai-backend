@@ -130,7 +130,7 @@ uv run alembic stamp head
 
 ## Scoring cuantitativo (IC)
 
-El `EmbeddingMatchScorerAdapter` calcula el Índice de Compatibilidad (IC) entre candidato y oferta. Está **cableado en `composition.py`**: reutiliza el mismo cliente OpenAI para embeddings y delega las métricas al dominio (`compatibility_metrics.py` y `tfidf.py`). El orquestador extrae las subdimensiones (`SemanticProfile`) del candidato y de la oferta, calcula el baseline de IC, re-verifica el CV optimizado y condiciona la aprobación a `ic >= MATCH_TARGET_IC` **y** al umbral de varianza. Si tras `MAX_WRITER_ATTEMPTS` no convergen ambos gates, se devuelve la mejor versión de IC con su **gap report** (best-effort).
+El `EmbeddingMatchScorerAdapter` calcula el Índice de Compatibilidad (IC) entre candidato y oferta. Está **cableado en `composition.py`**: reutiliza el mismo cliente OpenAI para embeddings y delega las métricas al dominio (`compatibility_metrics.py` y `tfidf.py`). El orquestador extrae las subdimensiones (`SemanticProfile`) del candidato y de la oferta, calcula el baseline de IC, re-verifica el CV optimizado y condiciona la aprobación a `ic >= MATCH_TARGET_IC` **y** al umbral de varianza. La extracción del CV y de la oferta arranca en paralelo, y los embeddings globales y por dimensión se agrupan en una sola petición. Si tras `MAX_WRITER_ATTEMPTS` no convergen ambos gates, se devuelve la mejor versión de IC con su **gap report** (best-effort).
 
 Fórmula implementada:
 
@@ -151,7 +151,7 @@ El corpus TF-IDF es la pareja `[CV, oferta]`, con `idf(w) = log((1 + N) / (1 + d
 | `MATCH_WEIGHT_NEUC` | Peso de `Neuc` (default `0.20`). |
 | `MATCH_EMBEDDING_MODEL` | Modelo de embeddings (default `text-embedding-3-small`). |
 
-Los pesos deben sumar 1. Antes de generar embeddings y calcular TF-IDF se ofuscan datos personales y atributos demográficos (edad, email, teléfono, nacionalidad, foto, etc.). Los desgloses `original_per_dimension` y `optimized_per_dimension` siguen siendo un diagnóstico con similitud coseno por dimensión y no influyen en el IC.
+Los pesos deben sumar 1. Antes de generar embeddings y calcular TF-IDF se ofuscan datos personales y atributos demográficos (edad, email, teléfono, nacionalidad, foto, etc.). Los desgloses `original_per_dimension` y `optimized_per_dimension` siguen siendo un diagnóstico con similitud coseno por dimensión y no influyen en el IC. Se puntúan todas las dimensiones no vacías de la oferta; si el CV no aporta texto para una de ellas, recibe `0.0`. Esto incluye `education` y `certifications` cuando la oferta las pide.
 
 ## Endpoints
 
@@ -219,7 +219,7 @@ Elimina la postulación y responde `204 No Content` sin body. Si no existe o per
 
 ### Contrato de `POST /cv/optimize`
 
-Ejecuta el grafo de LangGraph: la cadena `extractor → analyzer` corre en paralelo con el auditor del CV original, y el writer espera a ambas ramas para continuar. El score del CV original se calcula antes de optimizar y se devuelve como `original_ic`/`original_per_dimension`; el resultado del CV optimizado se devuelve como `optimized_ic`/`optimized_per_dimension`. Si la varianza del CV optimizado supera el umbral **o** el `IC` del CV optimizado queda por debajo de `MATCH_TARGET_IC`, el writer se reintenta hasta 3 intentos totales.
+Ejecuta el grafo de LangGraph: la extracción del CV y la de la oferta arrancan en paralelo; el analyzer espera a ambas, el writer espera al analyzer y el auditor del CV original se solapa con el writer. En cada intento, el auditor del CV optimizado y su extractor de perfil se ejecutan concurrentemente. El score del CV original se calcula antes de optimizar y se devuelve como `original_ic`/`original_per_dimension`; el resultado del CV optimizado se devuelve como `optimized_ic`/`optimized_per_dimension`. Si la varianza del CV optimizado supera el umbral **o** el `IC` del CV optimizado queda por debajo de `MATCH_TARGET_IC`, el writer se reintenta hasta 3 intentos totales.
 
 | Campo         | Extensiones     |
 | ------------- | --------------- |

@@ -207,7 +207,7 @@ async def test_runs_the_nodes_with_the_expected_dependencies() -> None:
     assert calls.index(extractor) < calls.index(analyzer)
     assert calls.index(extractor) < calls.index(writer)
     assert calls.index(analyzer) < calls.index(writer)
-    assert calls.index(original_auditor) < calls.index(writer)
+    assert calls.index(analyzer) < calls.index(original_auditor)
     assert calls.index(writer) < calls.index(optimized_auditor)
 
     assert _CV_TEXT in extractor[1]
@@ -220,22 +220,90 @@ async def test_runs_the_nodes_with_the_expected_dependencies() -> None:
     assert _GAP_TEXT in optimized_auditor[1]
 
 
-async def test_the_original_audit_runs_concurrently_with_extraction() -> None:
+async def test_extracts_candidate_and_job_concurrently() -> None:
+    barrier = asyncio.Barrier(2)
+    calls: list[tuple[AgentRole, str]] = []
+
+    class _Concurrent(StubLLMAgentAdapter):
+        async def complete(self, role: AgentRole, prompt: str) -> str:
+            calls.append((role, prompt))
+            is_candidate_extraction = (
+                role is AgentRole.EXTRACTOR
+                and prompt.startswith("Candidate CV:")
+            )
+            is_job_extraction = (
+                role is AgentRole.EXTRACTOR
+                and prompt.startswith("Job description:")
+            )
+            if is_candidate_extraction or is_job_extraction:
+                await asyncio.wait_for(barrier.wait(), timeout=2)
+            return await super().complete(role, prompt)
+
+    scorer = _FakeMatchScorer([_score(90.0), _score(90.0)])
+    orchestrator = LangGraphOrchestratorAdapter(
+        _Concurrent(variance_score=0.1),
+        match_scorer=scorer,
+    )
+
+    optimized = await orchestrator.optimize(_candidate(), _job_description())
+
+    assert optimized.writer_attempts == 1
+    job_extractions = [
+        prompt
+        for role, prompt in calls
+        if role is AgentRole.EXTRACTOR
+        and prompt.startswith("Job description:")
+    ]
+    assert len(job_extractions) == 1
+
+
+async def test_the_original_audit_does_not_block_the_writer() -> None:
     barrier = asyncio.Barrier(2)
 
     class _Concurrent(StubLLMAgentAdapter):
         async def complete(self, role: AgentRole, prompt: str) -> str:
-            is_original_audit = role is AgentRole.AUDITOR and "Original CV:" in prompt
-            if role is AgentRole.EXTRACTOR or is_original_audit:
+            is_original_audit = (
+                role is AgentRole.AUDITOR and "Original CV:" in prompt
+            )
+            if is_original_audit or role is AgentRole.WRITER:
                 await asyncio.wait_for(barrier.wait(), timeout=2)
             return await super().complete(role, prompt)
 
-    orchestrator = LangGraphOrchestratorAdapter(_Concurrent(variance_score=0.1))
+    orchestrator = LangGraphOrchestratorAdapter(
+        _Concurrent(variance_score=0.1)
+    )
 
     optimized = await orchestrator.optimize(_candidate(), _job_description())
 
-    assert optimized.original_variance_score == 0.8
     assert optimized.writer_attempts == 1
+    assert optimized.original_variance_score == 0.8
+
+
+async def test_audits_and_extracts_the_optimized_cv_concurrently() -> None:
+    barrier = asyncio.Barrier(2)
+
+    class _Concurrent(StubLLMAgentAdapter):
+        async def complete(self, role: AgentRole, prompt: str) -> str:
+            is_optimized_audit = (
+                role is AgentRole.AUDITOR and "Optimized CV:" in prompt
+            )
+            is_optimized_extraction = (
+                role is AgentRole.EXTRACTOR and "Optimized CV:" in prompt
+            )
+            if is_optimized_audit or is_optimized_extraction:
+                await asyncio.wait_for(barrier.wait(), timeout=2)
+            return await super().complete(role, prompt)
+
+    scorer = _FakeMatchScorer([_score(90.0), _score(90.0)])
+    orchestrator = LangGraphOrchestratorAdapter(
+        _Concurrent(variance_score=0.1),
+        match_scorer=scorer,
+    )
+
+    optimized = await orchestrator.optimize(_candidate(), _job_description())
+
+    assert optimized.writer_attempts == 1
+    assert optimized.optimized_variance_score == 0.1
 
 
 async def test_the_original_cv_is_audited_once_before_writing() -> None:
@@ -476,6 +544,40 @@ async def test_feeds_the_analyzer_with_the_baseline_scorecard() -> None:
     analysis_prompt = analysis_prompts[0]
     assert "technical_skills: 0.420" in analysis_prompt
     assert "Prioriza cerrar las brechas" in analysis_prompt
+
+
+async def test_scorecard_includes_requested_education_and_certifications() -> None:
+    prompts: list[str] = []
+
+    class _Recorder(StubLLMAgentAdapter):
+        async def complete(self, role: AgentRole, prompt: str) -> str:
+            prompts.append(prompt)
+            return await super().complete(role, prompt)
+
+    scorer = _FakeMatchScorer(
+        [
+            _score(
+                90.0,
+                per_dimension={
+                    "education": 0.6,
+                    "certifications": 0.0,
+                },
+            ),
+            _score(90.0),
+        ]
+    )
+    orchestrator = LangGraphOrchestratorAdapter(
+        _Recorder(variance_score=0.1),
+        match_scorer=scorer,
+    )
+
+    await orchestrator.optimize(_candidate(), _job_description())
+
+    analysis_prompt = next(
+        prompt for prompt in prompts if "Baseline match (IC=" in prompt
+    )
+    assert "education: 0.600" in analysis_prompt
+    assert "certifications: 0.000" in analysis_prompt
 
 
 async def test_extracts_the_job_profile_with_an_extra_explorer_call() -> None:
