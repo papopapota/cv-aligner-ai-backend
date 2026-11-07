@@ -1,6 +1,8 @@
+import asyncio
 import json
 import logging
 import re
+import time
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -157,6 +159,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         candidate: CandidateCV,
         job_description: JobDescription,
     ) -> OptimizedCV:
+        started_at = time.perf_counter()
         final_state = await self._graph.ainvoke(
             SharedState(
                 candidate_cv_text=candidate.raw_text,
@@ -198,34 +201,40 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         logger.info(
             "CV optimization finished: original_variance=%s "
             "optimized_variance=%s attempts=%s within_threshold=%s "
-            "original_ic=%s optimized_ic=%s",
+            "original_ic=%s optimized_ic=%s duration=%.3fs",
             optimized.original_variance_score,
             optimized.optimized_variance_score,
             optimized.writer_attempts,
             optimized.is_within_threshold(),
             optimized.original_ic,
             optimized.optimized_ic,
+            time.perf_counter() - started_at,
         )
         return optimized
 
     def _build_graph(self) -> CompiledStateGraph[SharedState]:
         graph: StateGraph[SharedState] = StateGraph(SharedState)
         graph.add_node("extractor", self._extractor)
+        graph.add_node("job_extractor", self._job_extractor)
         graph.add_node("analyzer", self._analyzer)
         graph.add_node("original_auditor", self._original_auditor)
         graph.add_node("writer", self._writer)
         graph.add_node("auditor", self._auditor)
+        graph.add_node("finalizer", self._finalizer)
 
         graph.add_edge(START, "extractor")
-        graph.add_edge(START, "original_auditor")
-        graph.add_edge("extractor", "analyzer")
-        graph.add_edge(["analyzer", "original_auditor"], "writer")
+        graph.add_edge(START, "job_extractor")
+        graph.add_edge(["extractor", "job_extractor"], "analyzer")
+        graph.add_edge("analyzer", "writer")
+        graph.add_edge("analyzer", "original_auditor")
         graph.add_edge("writer", "auditor")
+        graph.add_edge("original_auditor", "finalizer")
         graph.add_conditional_edges(
             "auditor",
             self._route_after_audit,
-            {_RETRY: "writer", _APPROVE: END},
+            {_RETRY: "writer", _APPROVE: "finalizer"},
         )
+        graph.add_edge("finalizer", END)
 
         return graph.compile()
 
@@ -241,6 +250,22 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             "candidate_profile": parse_semantic_profile(profile),
         }
 
+    async def _job_extractor(self, state: SharedState) -> dict[str, object]:
+        if self._match_scorer is None:
+            return {}
+        started_at = time.perf_counter()
+        profile = parse_semantic_profile(
+            await self._llm_agent.complete(
+                AgentRole.EXTRACTOR,
+                f"Job description:\n{state.job_description_text}",
+            )
+        )
+        logger.info(
+            "Job profile extraction finished in %.3fs",
+            time.perf_counter() - started_at,
+        )
+        return {"job_profile": profile}
+
     async def _analyzer(self, state: SharedState) -> dict[str, object]:
         if self._match_scorer is None:
             analysis = await self._llm_agent.complete(
@@ -250,27 +275,27 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             )
             return {"gap_analysis": analysis}
 
-        job_profile = parse_semantic_profile(
-            await self._llm_agent.complete(
-                AgentRole.EXTRACTOR,
-                f"Job description:\n{state.job_description_text}",
-            )
-        )
+        started_at = time.perf_counter()
         baseline_match = await self._match_scorer.match(
             candidate_text=state.candidate_cv_text,
             job_text=state.job_description_text,
             candidate_dimensions=state.candidate_profile.as_dimensions()
             if state.candidate_profile is not None
             else {},
-            job_dimensions=job_profile.as_dimensions(),
+            job_dimensions=state.job_profile.as_dimensions()
+            if state.job_profile is not None
+            else {},
         )
         analysis = await self._llm_agent.complete(
             AgentRole.ANALYZER,
             _build_analyzer_prompt(state, baseline_match),
         )
+        logger.info(
+            "Baseline matching and analysis finished in %.3fs",
+            time.perf_counter() - started_at,
+        )
         return {
             "gap_analysis": analysis,
-            "job_profile": job_profile,
             "baseline_match": baseline_match,
         }
 
@@ -288,15 +313,25 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         )
         return {"original_variance_score": original_variance_score}
 
+    async def _finalizer(self, state: SharedState) -> dict[str, object]:
+        return {}
+
     async def _writer(self, state: SharedState) -> dict[str, object]:
+        started_at = time.perf_counter()
         prompt = self._writer_prompt(state)
         optimized_text = await self._llm_agent.complete(
             AgentRole.WRITER,
             prompt,
         )
+        attempt = state.writer_attempts + 1
+        logger.info(
+            "Writer attempt %s finished in %.3fs",
+            attempt,
+            time.perf_counter() - started_at,
+        )
         return {
             "optimized_text": optimized_text,
-            "writer_attempts": state.writer_attempts + 1,
+            "writer_attempts": attempt,
         }
 
     def _writer_prompt(self, state: SharedState) -> str:
@@ -319,33 +354,43 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         )
 
     async def _auditor(self, state: SharedState) -> dict[str, object]:
-        audit = await self._llm_agent.complete(
-            AgentRole.AUDITOR,
+        started_at = time.perf_counter()
+        audit_prompt = (
             f"Job description:\n{state.job_description_text}\n"
             f"Gaps:\n{state.gap_analysis}\n"
-            f"Optimized CV:\n{state.optimized_text}",
+            f"Optimized CV:\n{state.optimized_text}"
         )
+        if self._match_scorer is None:
+            audit = await self._llm_agent.complete(
+                AgentRole.AUDITOR,
+                audit_prompt,
+            )
+            optimized_profile_text = None
+        else:
+            audit, optimized_profile_text = await asyncio.gather(
+                self._llm_agent.complete(AgentRole.AUDITOR, audit_prompt),
+                self._llm_agent.complete(
+                    AgentRole.EXTRACTOR,
+                    f"Optimized CV:\n{state.optimized_text}",
+                ),
+            )
         optimized_variance_score = parse_variance_score(audit)
         audit_reason = parse_audit_reason(audit)
         logger.info(
-            "Auditor attempt %s: variance=%s reason=%s",
+            "Auditor attempt %s: variance=%s reason=%s duration=%.3fs",
             state.writer_attempts,
             optimized_variance_score,
             audit_reason,
+            time.perf_counter() - started_at,
         )
         updates: dict[str, object] = {
             "optimized_variance_score": optimized_variance_score,
             "audit_reason": audit_reason,
         }
-        if self._match_scorer is None:
+        if self._match_scorer is None or optimized_profile_text is None:
             return updates
 
-        candidate_profile = parse_semantic_profile(
-            await self._llm_agent.complete(
-                AgentRole.EXTRACTOR,
-                f"Optimized CV:\n{state.optimized_text}",
-            )
-        )
+        candidate_profile = parse_semantic_profile(optimized_profile_text)
         optimized_match = await self._match_scorer.match(
             candidate_text=state.optimized_text,
             job_text=state.job_description_text,

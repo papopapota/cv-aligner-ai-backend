@@ -1,4 +1,6 @@
+import logging
 import re
+import time
 from collections.abc import Mapping
 
 from src.application.ports.out.match_scorer_port import MatchScorerPort
@@ -15,6 +17,8 @@ from src.infrastructure.adapters.out.openai_embedding_client import (
     EmbeddingClientError,
 )
 from src.infrastructure.config import MatchScoringSettings
+
+logger = logging.getLogger(__name__)
 
 _SANITIZERS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b[\w.+-]+@[\w.-]+\.\w{2,}\b"), "[ocultado]"),
@@ -98,23 +102,55 @@ class EmbeddingMatchScorerAdapter(MatchScorerPort):
                 ic=0.0,
             )
 
-        try:
-            candidate_vector, job_vector = await self._pair_embeddings(
-                candidate_text,
-                job_text,
+        per_dimension: dict[str, float] = {}
+        dimension_texts: list[tuple[str, str, str]] = []
+        texts = [candidate_text, job_text]
+        for dimension in sorted(job_dimensions):
+            job_dimension_text = sanitize_report_text(
+                job_dimensions[dimension].strip()
             )
+            if not job_dimension_text:
+                continue
+            candidate_dimension_text = sanitize_report_text(
+                candidate_dimensions.get(dimension, "").strip()
+            )
+            if not candidate_dimension_text:
+                per_dimension[dimension] = 0.0
+                continue
+            dimension_texts.append(
+                (dimension, candidate_dimension_text, job_dimension_text)
+            )
+            texts.extend([candidate_dimension_text, job_dimension_text])
+
+        unique_texts = list(dict.fromkeys(texts))
+        started_at = time.perf_counter()
+        try:
+            embedded = await self._embedding_client.embed(unique_texts)
         except EmbeddingClientError as exc:
             raise MatchScorerError(str(exc)) from exc
+        logger.info(
+            "Embedding batch finished: texts=%d duration=%.3fs",
+            len(unique_texts),
+            time.perf_counter() - started_at,
+        )
+        vectors = dict(zip(unique_texts, embedded, strict=True))
 
+        candidate_vector = vectors[candidate_text]
+        job_vector = vectors[job_text]
         ncos = normalized_cosine(candidate_vector, job_vector)
         neuc = normalized_euclidean(candidate_vector, job_vector)
         ntfidf = normalized_tfidf_relevance(candidate_text, job_text)
         ic = compatibility_index(ncos, ntfidf, neuc, self._weights)
 
-        per_dimension = await self._score_dimensions(
-            candidate_dimensions,
-            job_dimensions,
-        )
+        for (
+            dimension,
+            candidate_dimension_text,
+            job_dimension_text,
+        ) in dimension_texts:
+            per_dimension[dimension] = normalized_cosine(
+                vectors[candidate_dimension_text],
+                vectors[job_dimension_text],
+            )
 
         return CompatibilityScore(
             ncos=ncos,
@@ -123,36 +159,3 @@ class EmbeddingMatchScorerAdapter(MatchScorerPort):
             ic=ic,
             per_dimension=per_dimension,
         )
-
-    async def _pair_embeddings(
-        self,
-        left_text: str,
-        right_text: str,
-    ) -> tuple[list[float], list[float]]:
-        left, right = await self._embedding_client.embed([left_text, right_text])
-        return left, right
-
-    async def _score_dimensions(
-        self,
-        candidate_dimensions: Mapping[str, str],
-        job_dimensions: Mapping[str, str],
-    ) -> dict[str, float]:
-        per_dimension: dict[str, float] = {}
-        shared = set(candidate_dimensions) & set(job_dimensions)
-        for dimension in sorted(shared):
-            candidate_text = candidate_dimensions[dimension].strip()
-            job_text = job_dimensions[dimension].strip()
-            if not candidate_text or not job_text:
-                continue
-            try:
-                candidate_vector, job_vector = await self._pair_embeddings(
-                    sanitize_report_text(candidate_text),
-                    sanitize_report_text(job_text),
-                )
-            except EmbeddingClientError as exc:
-                raise MatchScorerError(str(exc)) from exc
-            per_dimension[dimension] = normalized_cosine(
-                candidate_vector,
-                job_vector,
-            )
-        return per_dimension

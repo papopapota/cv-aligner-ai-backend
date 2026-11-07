@@ -153,7 +153,68 @@ async def test_scores_zero_for_empty_inputs() -> None:
     assert score == CompatibilityScore(0.0, 0.0, 0.0, 0.0)
 
 
-async def test_skips_dimensions_missing_on_either_side() -> None:
+async def test_batches_global_and_dimension_embeddings_in_one_request() -> None:
+    adapter, client = _adapter({}, default=_UNIT)
+
+    score = await adapter.match(
+        "global candidate",
+        "global job",
+        {
+            "technical_skills": "skill candidate",
+            "education": "degree candidate",
+        },
+        {
+            "technical_skills": "skill job",
+            "education": "degree job",
+            "certifications": "certification required",
+        },
+    )
+
+    assert len(client.calls) == 1
+    assert client.calls[0] == [
+        "global candidate",
+        "global job",
+        "degree candidate",
+        "degree job",
+        "skill candidate",
+        "skill job",
+    ]
+    assert score.per_dimension == {
+        "certifications": 0.0,
+        "education": pytest.approx(1.0),
+        "technical_skills": pytest.approx(1.0),
+    }
+
+
+async def test_deduplicates_repeated_embedding_texts() -> None:
+    adapter, client = _adapter({"same text": _UNIT})
+
+    score = await adapter.match(
+        "same text",
+        "same text",
+        {"technical_skills": "same text"},
+        {"technical_skills": "same text"},
+    )
+
+    assert client.calls == [["same text"]]
+    assert score.ncos == pytest.approx(1.0)
+    assert score.per_dimension == {"technical_skills": pytest.approx(1.0)}
+
+
+async def test_scores_zero_for_a_requested_dimension_missing_from_the_cv() -> None:
+    adapter, _ = _adapter({}, default=_UNIT)
+
+    score = await adapter.match(
+        "alpha",
+        "beta",
+        {"experience": "exp"},
+        {"technical_skills": "skill"},
+    )
+
+    assert score.per_dimension == {"technical_skills": 0.0}
+
+
+async def test_omits_dimensions_that_the_job_does_not_request() -> None:
     adapter, _ = _adapter({}, default=_UNIT)
 
     score = await adapter.match(
@@ -163,10 +224,10 @@ async def test_skips_dimensions_missing_on_either_side() -> None:
         {"experience": "exp"},
     )
 
-    assert score.per_dimension == {}
+    assert score.per_dimension == {"experience": 0.0}
 
 
-async def test_leaves_empty_dimension_text_out() -> None:
+async def test_scores_zero_when_candidate_dimension_text_is_blank() -> None:
     adapter, _ = _adapter({}, default=_UNIT)
 
     score = await adapter.match(
@@ -176,7 +237,43 @@ async def test_leaves_empty_dimension_text_out() -> None:
         {"technical_skills": "skill"},
     )
 
+    assert score.per_dimension == {"technical_skills": 0.0}
+
+
+async def test_ignores_empty_job_dimensions() -> None:
+    adapter, _ = _adapter({}, default=_UNIT)
+
+    score = await adapter.match(
+        "alpha",
+        "beta",
+        {"technical_skills": "skill"},
+        {"technical_skills": "   "},
+    )
+
     assert score.per_dimension == {}
+
+
+async def test_scores_requested_education_and_certifications() -> None:
+    vectors = {
+        "degree alpha": _UNIT,
+        "degree beta": _UNIT,
+    }
+    adapter, _ = _adapter(vectors)
+
+    score = await adapter.match(
+        "alpha",
+        "beta",
+        {"education": "degree alpha"},
+        {
+            "education": "degree beta",
+            "certifications": "AWS required",
+        },
+    )
+
+    assert score.per_dimension == {
+        "certifications": 0.0,
+        "education": pytest.approx(1.0),
+    }
 
 
 async def test_disjoint_zero_vectors_score_zero() -> None:
