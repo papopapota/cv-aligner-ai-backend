@@ -25,6 +25,9 @@ def test_starts_empty_with_a_variance_of_one_and_no_attempts() -> None:
     assert state.audit_reason == ""
     assert state.writer_attempts == 0
     assert state.best_ic == 0.0
+    assert state.best_ncos == 0.0
+    assert state.best_ntfidf == 0.0
+    assert state.best_neuc == 0.0
 
 
 def test_is_mutable_so_nodes_can_write_into_it() -> None:

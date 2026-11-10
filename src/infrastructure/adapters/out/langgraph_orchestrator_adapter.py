@@ -198,15 +198,32 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
                 original_per_dimension=original_per_dimension,
                 gap_report=final_state["gap_analysis"],
             )
+        if baseline_match is not None:
+            original_ncos: float | None = baseline_match.ncos
+            original_ntfidf: float | None = baseline_match.ntfidf
+            original_neuc: float | None = baseline_match.neuc
+            best_ncos: float | None = final_state["best_ncos"]
+            best_ntfidf: float | None = final_state["best_ntfidf"]
+            best_neuc: float | None = final_state["best_neuc"]
+        else:
+            original_ncos = original_ntfidf = original_neuc = None
+            best_ncos = best_ntfidf = best_neuc = None
         logger.info(
             "CV optimization finished: original_variance=%s "
             "optimized_variance=%s attempts=%s within_threshold=%s "
-            "original_ic=%s optimized_ic=%s duration=%.3fs",
+            "original(ncos=%s ntfidf=%s neuc=%s ic=%s) "
+            "best(ncos=%s ntfidf=%s neuc=%s ic=%s) duration=%.3fs",
             optimized.original_variance_score,
             optimized.optimized_variance_score,
             optimized.writer_attempts,
             optimized.is_within_threshold(),
+            original_ncos,
+            original_ntfidf,
+            original_neuc,
             optimized.original_ic,
+            best_ncos,
+            best_ntfidf,
+            best_neuc,
             optimized.optimized_ic,
             time.perf_counter() - started_at,
         )
@@ -285,6 +302,14 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             job_dimensions=state.job_profile.as_dimensions()
             if state.job_profile is not None
             else {},
+        )
+        logger.info(
+            "Baseline metrics (original CV): ncos=%.4f ntfidf=%.4f "
+            "neuc=%.4f ic=%.2f",
+            baseline_match.ncos,
+            baseline_match.ntfidf,
+            baseline_match.neuc,
+            baseline_match.ic,
         )
         analysis = await self._llm_agent.complete(
             AgentRole.ANALYZER,
@@ -400,10 +425,22 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             else {},
         )
         updates["optimized_match"] = optimized_match
+        logger.info(
+            "Optimized metrics attempt %s: ncos=%.4f ntfidf=%.4f "
+            "neuc=%.4f ic=%.2f",
+            state.writer_attempts,
+            optimized_match.ncos,
+            optimized_match.ntfidf,
+            optimized_match.neuc,
+            optimized_match.ic,
+        )
         if state.best_text == "" or optimized_match.ic > state.best_ic:
             updates["best_text"] = state.optimized_text
             updates["best_ic"] = optimized_match.ic
             updates["best_variance"] = optimized_variance_score
+            updates["best_ncos"] = optimized_match.ncos
+            updates["best_ntfidf"] = optimized_match.ntfidf
+            updates["best_neuc"] = optimized_match.neuc
             updates["best_per_dimension"] = optimized_match.per_dimension
         return updates
 
