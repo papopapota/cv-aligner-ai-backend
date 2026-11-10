@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Mapping
 
 import pytest
@@ -624,6 +625,37 @@ async def test_tracks_the_best_version_while_retrying() -> None:
     assert state["best_ic"] == 90.0
     assert state["best_text"] == "second version"
     assert state["best_variance"] == 0.9
+    assert state["best_ncos"] == 0.9
+    assert state["best_ntfidf"] == 0.0
+    assert state["best_neuc"] == 0.0
+
+
+async def test_logs_labelled_baseline_and_optimized_metrics(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    scorer = _FakeMatchScorer([_score(60.0), _score(90.0)])
+    orchestrator = LangGraphOrchestratorAdapter(
+        StubLLMAgentAdapter(variance_score=0.1),
+        match_scorer=scorer,
+    )
+
+    with caplog.at_level(logging.INFO):
+        await orchestrator.optimize(_candidate(), _job_description())
+
+    assert any(
+        "Baseline metrics (original CV): ncos=0.6000" in message
+        for message in caplog.messages
+    )
+    assert any(
+        "Optimized metrics attempt 1: ncos=0.9000" in message
+        for message in caplog.messages
+    )
+    assert any(
+        "CV optimization finished" in message
+        and "best(ncos=0.9" in message
+        and "ic=90.0" in message
+        for message in caplog.messages
+    )
 
 
 async def test_returns_the_best_effort_version_with_its_breakdown() -> None:

@@ -22,4 +22,7 @@ class SharedState:
     best_text: str = ""
     best_ic: float = 0.0
     best_variance: float = 1.0
+    best_ncos: float = 0.0
+    best_ntfidf: float = 0.0
+    best_neuc: float = 0.0
     best_per_dimension: dict[str, float] = field(default_factory=dict)
