@@ -1,15 +1,10 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
+from src.application.ports.inbound.cv_upload_use_case import FileUpload
 from src.domain.candidate_cv import CandidateCV
 from src.domain.job_description import JobDescription
 
-
-@dataclass(frozen=True, slots=True)
-class FileUpload:
-    filename: str
-    content_type: str
-    content: bytes
+__all__ = ["FileUpload", "UploadCVUseCase"]
 
 
 class UploadCVUseCase(ABC):
