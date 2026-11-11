@@ -65,6 +65,16 @@ class UploadedFileMetadata:
             allowed_extensions=upload_rules.JOB_DESCRIPTION_ALLOWED_EXTENSIONS,
         )
 
+    @classmethod
+    def from_job_description_text(cls, text: str) -> "UploadedFileMetadata":
+        content = text.encode("utf-8")
+        return cls._build(
+            filename="job_description.txt",
+            content_type="text/plain",
+            content=content,
+            allowed_extensions=upload_rules.JOB_DESCRIPTION_ALLOWED_EXTENSIONS,
+        )
+
     def _ensure_valid_sha256(self) -> None:
         digest = self.sha256.lower()
         if len(digest) != _SHA256_LENGTH or not set(digest) <= _HEX_DIGITS:

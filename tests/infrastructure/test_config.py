@@ -3,7 +3,12 @@ from pydantic import ValidationError
 
 from src.application.ports.out.llm_agent_port import AgentRole
 from src.domain.audit_rules import DEFAULT_IC_TARGET, MAX_VARIANCE_THRESHOLD
-from src.infrastructure.config import AuditSettings, LLMSettings, MatchScoringSettings
+from src.infrastructure.config import (
+    AuditSettings,
+    LLMSettings,
+    MatchScoringSettings,
+    S3Settings,
+)
 
 
 def test_exposes_no_max_token_overrides_by_default(
@@ -141,3 +146,47 @@ def test_match_scoring_rejects_an_ic_target_above_one_hundred(
 
     with pytest.raises(ValidationError):
         MatchScoringSettings(_env_file=None)  # type: ignore[call-arg]
+
+
+def _clear_s3_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for variable in (
+        "S3_ENDPOINT_URL",
+        "S3_REGION",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "S3_BUCKET",
+        "S3_USE_SSL",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+
+
+def test_s3_settings_default_to_localstack(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_s3_env(monkeypatch)
+
+    settings = S3Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.endpoint_url == "http://localhost:4566"
+    assert settings.region == "us-east-1"
+    assert settings.access_key_id == "test"
+    assert settings.secret_access_key == "test"
+    assert settings.bucket == "cv-aligner-cvs"
+    assert settings.use_ssl is False
+
+
+def test_s3_settings_read_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_s3_env(monkeypatch)
+    monkeypatch.setenv("S3_ENDPOINT_URL", "https://s3.amazonaws.com")
+    monkeypatch.setenv("S3_REGION", "eu-west-1")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "access")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("S3_BUCKET", "custom-bucket")
+    monkeypatch.setenv("S3_USE_SSL", "true")
+
+    settings = S3Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.endpoint_url == "https://s3.amazonaws.com"
+    assert settings.region == "eu-west-1"
+    assert settings.access_key_id == "access"
+    assert settings.secret_access_key == "secret"
+    assert settings.bucket == "custom-bucket"
+    assert settings.use_ssl is True

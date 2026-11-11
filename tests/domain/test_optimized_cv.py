@@ -8,6 +8,7 @@ from src.domain.audit_rules import (
 )
 from src.domain.errors import InvalidUploadError
 from src.domain.optimized_cv import OptimizedCV
+from src.domain.personal_info import Location, PersonalInfo, ProfessionalLinks
 
 _CONTENT = "Optimized CV body"
 
@@ -23,6 +24,7 @@ def _optimized_cv(
     original_per_dimension: dict[str, float] | None = None,
     optimized_per_dimension: dict[str, float] | None = None,
     gap_report: str = "",
+    personal_info: PersonalInfo | None = None,
 ) -> OptimizedCV:
     return OptimizedCV(
         content=content,
@@ -43,6 +45,7 @@ def _optimized_cv(
             else {}
         ),
         gap_report=gap_report,
+        personal_info=personal_info,
     )
 
 
@@ -191,3 +194,40 @@ def test_is_immutable() -> None:
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         optimized.content = "another draft"  # type: ignore[misc]
+
+
+def test_full_content_is_the_technical_content_without_personal_info() -> None:
+    optimized = _optimized_cv()
+
+    assert optimized.full_content == _CONTENT
+
+
+def test_full_content_prepends_the_immutable_personal_header() -> None:
+    personal_info = PersonalInfo(
+        full_name="Ana Developer",
+        headline="Backend Developer",
+        email="ana@example.com",
+        phone="+51 999 999 999",
+        location=Location(city="Lima", country="Peru"),
+        links=ProfessionalLinks(
+            linkedin="linkedin.com/in/ana",
+            github="github.com/ana",
+        ),
+    )
+
+    optimized = _optimized_cv(personal_info=personal_info)
+
+    assert optimized.content == _CONTENT
+    assert optimized.full_content == (
+        "Ana Developer\n"
+        "Backend Developer\n"
+        "ana@example.com | +51 999 999 999 | Lima, Peru\n"
+        "linkedin.com/in/ana | github.com/ana\n\n"
+        f"{_CONTENT}"
+    )
+
+
+def test_full_content_ignores_an_empty_personal_header() -> None:
+    optimized = _optimized_cv(personal_info=PersonalInfo())
+
+    assert optimized.full_content == _CONTENT

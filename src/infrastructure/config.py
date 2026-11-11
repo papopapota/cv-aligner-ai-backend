@@ -110,6 +110,21 @@ class MatchScoringSettings(BaseSettings):
         return self
 
 
+class S3Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="S3_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    endpoint_url: str = "http://localhost:4566"
+    region: str = "us-east-1"
+    access_key_id: str = "test"
+    secret_access_key: str = "test"
+    bucket: str = "cv-aligner-cvs"
+    use_ssl: bool = False
+
+
 class LLMConfigurationError(RuntimeError):
     pass
 
