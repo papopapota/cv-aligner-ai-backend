@@ -169,24 +169,24 @@ Los pesos deben sumar 1. Antes de generar embeddings y calcular TF-IDF se ofusca
 | Método | Ruta | Descripción | Respuesta |
 | ------ | ---- | ----------- | --------- |
 | GET | `/health` | Verificación de estado | `{"status": "ok"}` |
-| POST | `/auth/register` | Registro de usuario (hash bcrypt) | Usuario creado |
-| POST | `/auth/login` | Login con email y contraseña | Tokens JWT |
-| POST | `/auth/refresh` | Renueva tokens con un refresh token | Tokens JWT |
+| POST | `/api/v1/auth/register` | Registro de usuario (hash bcrypt) | Usuario creado |
+| POST | `/api/v1/auth/login` | Login con email y contraseña | Tokens JWT |
+| POST | `/api/v1/auth/refresh` | Renueva tokens con un refresh token | Tokens JWT |
 | POST | `/api/v1/cvs` | Sube un CV a S3 e inicia el parseo en background | CV creado (`202`) |
 | GET | `/api/v1/cvs` | Lista los CVs del usuario autenticado | Array de CVs |
 | GET | `/api/v1/cvs/{cv_id}` | Consulta el estado/procesamiento de un CV | Estado del CV |
 | POST | `/api/v1/cvs/{cv_id}/optimize` | Optimiza un CV ya parseado contra una oferta | CV optimizado |
-| GET | `/applications` | Lista las postulaciones del usuario autenticado | Array de postulaciones |
-| POST | `/applications` | Crea una postulación para el usuario autenticado | Postulación creada (`201`) |
-| PATCH | `/applications/{id}/status` | Actualiza el estado de una postulación | Postulación actualizada |
-| DELETE | `/applications/{id}` | Elimina una postulación del usuario autenticado | `204` sin body |
+| GET | `/api/v1/applications` | Lista las postulaciones del usuario autenticado | Array de postulaciones |
+| POST | `/api/v1/applications` | Crea una postulación para el usuario autenticado | Postulación creada (`201`) |
+| PATCH | `/api/v1/applications/{id}/status` | Actualiza el estado de una postulación | Postulación actualizada |
+| DELETE | `/api/v1/applications/{id}` | Elimina una postulación del usuario autenticado | `204` sin body |
 
 Todos los endpoints de CV y postulaciones requieren `Authorization: Bearer <access_token>`. El dueño se obtiene del `sub` del JWT (email), nunca de un `user_id` enviado por el cliente.
 
-### Contrato de `/applications`
+### Contrato de `/api/v1/applications`
 
 ```http
-GET /applications
+GET /api/v1/applications
 ```
 
 Devuelve solo las postulaciones del usuario autenticado, ordenadas por `created_at` descendente:
@@ -205,7 +205,7 @@ Devuelve solo las postulaciones del usuario autenticado, ordenadas por `created_
 ```
 
 ```http
-POST /applications
+POST /api/v1/applications
 Content-Type: application/json
 
 { "job_title": "Desarrollador Frontend", "company": "Tech Corp" }
@@ -214,7 +214,7 @@ Content-Type: application/json
 El estado inicial siempre es `pending`. El `user_id` del body se ignora (no forma parte del schema).
 
 ```http
-PATCH /applications/1/status
+PATCH /api/v1/applications/1/status
 Content-Type: application/json
 
 { "status": "accepted" }
@@ -223,7 +223,7 @@ Content-Type: application/json
 Estados válidos: `pending`, `under-review`, `accepted`, `rejected`. Un estado fuera de esa lista devuelve `422`; una postulación inexistente o de otro usuario devuelve `404`. Sin token o con un token inválido/expirado, `401`.
 
 ```http
-DELETE /applications/1
+DELETE /api/v1/applications/1
 ```
 
 Elimina la postulación y responde `204 No Content` sin body. Si no existe o pertenece a otro usuario, devuelve `404`; sin token o con un token inválido/expirado, `401`.

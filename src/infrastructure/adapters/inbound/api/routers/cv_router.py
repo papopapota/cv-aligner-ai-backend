@@ -37,7 +37,7 @@ from src.infrastructure.adapters.inbound.api.routers.auth_router import (
 )
 from src.infrastructure.database import get_session
 
-router = APIRouter(prefix="/api/v1/cvs", tags=["CVs"])
+router = APIRouter(prefix="/cvs", tags=["CVs"])
 
 
 def get_cv_repository(

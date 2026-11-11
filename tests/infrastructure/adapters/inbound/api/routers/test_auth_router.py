@@ -46,7 +46,7 @@ async def test_register_returns_the_created_user(
     repository.create.return_value = _user()
 
     response = await client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "name": "Juan Perez",
             "email": "juan@example.com",
@@ -71,7 +71,7 @@ async def test_register_returns_400_when_email_is_already_registered(
     repository.create.side_effect = UserAlreadyExistsError("juan@example.com")
 
     response = await client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "name": "Juan Perez",
             "email": "juan@example.com",
@@ -90,7 +90,7 @@ async def test_login_returns_tokens_for_valid_credentials(
     repository.get_by_email.return_value = _user(hash_password("securepassword123"))
 
     response = await client.post(
-        "/auth/login",
+        "/api/v1/auth/login",
         json={"email": "juan@example.com", "password": "securepassword123"},
     )
 
@@ -108,7 +108,7 @@ async def test_login_returns_401_when_user_does_not_exist(
     repository.get_by_email.return_value = None
 
     response = await client.post(
-        "/auth/login",
+        "/api/v1/auth/login",
         json={"email": "juan@example.com", "password": "securepassword123"},
     )
 
@@ -123,7 +123,7 @@ async def test_login_returns_401_when_password_is_wrong(
     repository.get_by_email.return_value = _user(hash_password("correct-password"))
 
     response = await client.post(
-        "/auth/login",
+        "/api/v1/auth/login",
         json={"email": "juan@example.com", "password": "wrong-password"},
     )
 
@@ -138,7 +138,7 @@ async def test_refresh_returns_new_tokens(
     repository.get_by_email.return_value = _user()
     token = create_access_token(subject="juan@example.com")
 
-    response = await client.post("/auth/refresh", params={"token": token})
+    response = await client.post("/api/v1/auth/refresh", params={"token": token})
 
     assert response.status_code == 200
     body = response.json()
@@ -150,7 +150,7 @@ async def test_refresh_returns_401_for_invalid_token(
     client: AsyncClient,
     repository: AsyncMock,
 ) -> None:
-    response = await client.post("/auth/refresh", params={"token": "invalid"})
+    response = await client.post("/api/v1/auth/refresh", params={"token": "invalid"})
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid refresh token"}

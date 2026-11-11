@@ -23,7 +23,7 @@ from src.infrastructure.security import (
     verify_password,
 )
 
-router = APIRouter(tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 # Dependency

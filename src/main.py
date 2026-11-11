@@ -33,6 +33,8 @@ from src.infrastructure.database import dispose_engine
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+API_V1_PREFIX = "/api/v1"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -67,9 +69,9 @@ app.add_exception_handler(CVNotFoundError, handle_cv_not_found)
 app.add_exception_handler(CVNotReadyError, handle_cv_not_ready)
 app.add_exception_handler(CVFailedError, handle_cv_failed)
 app.add_exception_handler(StorageError, handle_storage_error)
-app.include_router(cvs_router)
-app.include_router(auth_router, prefix="/auth")
-app.include_router(application_router)
+app.include_router(cvs_router, prefix=API_V1_PREFIX)
+app.include_router(auth_router, prefix=API_V1_PREFIX)
+app.include_router(application_router, prefix=API_V1_PREFIX)
 
 
 @app.get("/health")

@@ -77,7 +77,7 @@ def _auth_headers() -> dict[str, str]:
 async def test_list_applications_requires_authentication(
     client: AsyncClient,
 ) -> None:
-    response = await client.get("/applications")
+    response = await client.get("/api/v1/applications")
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Not authenticated"}
@@ -87,7 +87,7 @@ async def test_list_applications_rejects_an_invalid_token(
     client: AsyncClient,
 ) -> None:
     response = await client.get(
-        "/applications",
+        "/api/v1/applications",
         headers={"Authorization": "Bearer not-a-token"},
     )
 
@@ -103,7 +103,7 @@ async def test_list_applications_returns_only_the_current_users_applications(
     user_repository.get_by_email.return_value = _user()
     application_repository.list_by_user.return_value = [_application()]
 
-    response = await client.get("/applications", headers=_auth_headers())
+    response = await client.get("/api/v1/applications", headers=_auth_headers())
 
     assert response.status_code == 200
     assert response.json() == [
@@ -128,7 +128,7 @@ async def test_create_application_uses_the_authenticated_user(
     application_repository.create.return_value = _application()
 
     response = await client.post(
-        "/applications",
+        "/api/v1/applications",
         headers=_auth_headers(),
         json={"job_title": "Desarrollador Frontend", "company": "Tech Corp"},
     )
@@ -148,7 +148,7 @@ async def test_update_status_uses_the_body_and_returns_the_application(
     application_repository.update_status.return_value = _application(status="accepted")
 
     response = await client.patch(
-        "/applications/1/status",
+        "/api/v1/applications/1/status",
         headers=_auth_headers(),
         json={"status": "accepted"},
     )
@@ -167,7 +167,7 @@ async def test_update_status_returns_404_for_an_application_of_another_user(
     application_repository.update_status.return_value = None
 
     response = await client.patch(
-        "/applications/99/status",
+        "/api/v1/applications/99/status",
         headers=_auth_headers(),
         json={"status": "accepted"},
     )
@@ -183,7 +183,7 @@ async def test_update_status_rejects_an_unknown_status(
     user_repository.get_by_email.return_value = _user()
 
     response = await client.patch(
-        "/applications/1/status",
+        "/api/v1/applications/1/status",
         headers=_auth_headers(),
         json={"status": "invented"},
     )
@@ -199,7 +199,7 @@ async def test_delete_application_uses_the_authenticated_user(
     user_repository.get_by_email.return_value = _user()
     application_repository.delete.return_value = True
 
-    response = await client.delete("/applications/1", headers=_auth_headers())
+    response = await client.delete("/api/v1/applications/1", headers=_auth_headers())
 
     assert response.status_code == 204
     assert response.content == b""
@@ -214,7 +214,7 @@ async def test_delete_application_returns_404_for_an_application_of_another_user
     user_repository.get_by_email.return_value = _user()
     application_repository.delete.return_value = False
 
-    response = await client.delete("/applications/99", headers=_auth_headers())
+    response = await client.delete("/api/v1/applications/99", headers=_auth_headers())
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Application not found"}
