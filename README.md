@@ -175,6 +175,7 @@ Los pesos deben sumar 1. Antes de generar embeddings y calcular TF-IDF se ofusca
 | POST | `/api/v1/cvs` | Sube un CV a S3 e inicia el parseo en background | CV creado (`202`) |
 | GET | `/api/v1/cvs` | Lista los CVs del usuario autenticado | Array de CVs |
 | GET | `/api/v1/cvs/{cv_id}` | Consulta el estado/procesamiento de un CV | Estado del CV |
+| GET | `/api/v1/cvs/{cv_id}/content` | Devuelve el texto extraído; opcionalmente el JSON estructurado | Contenido del CV |
 | POST | `/api/v1/cvs/{cv_id}/optimize` | Optimiza un CV ya parseado contra una oferta | CV optimizado |
 | GET | `/api/v1/applications` | Lista las postulaciones del usuario autenticado | Array de postulaciones |
 | POST | `/api/v1/applications` | Crea una postulación para el usuario autenticado | Postulación creada (`201`) |
@@ -286,6 +287,42 @@ Devuelve el estado actual del CV. Es el endpoint de polling:
 | `ERROR` | El procesamiento falló | `REUPLOAD_CV` |
 
 Un CV en `ERROR` sigue devolviendo `200` con `error_code` y `error_message`. El objeto S3 se conserva; actualmente no existe endpoint de reintento. Un `cv_id` inexistente o de otro usuario devuelve `404`.
+
+Para el polling se recomienda empezar con intervalos de 1 segundo, pasar a 2 y luego a 5 segundos, y detenerse cuando el estado sea `PARSED` o `ERROR`. La consulta de estado no carga el texto del CV ni el JSON estructurado desde PostgreSQL.
+
+#### `GET /api/v1/cvs/{cv_id}/content`
+
+Devuelve el texto original extraído cuando el CV está en `PARSED`:
+
+```json
+{
+  "id": "2f4c9d8e-7a5b-4c1d-9e0f-123456789abc",
+  "status": "PARSED",
+  "raw_text": "Texto extraído del CV original...",
+  "characters_extracted": 1234
+}
+```
+
+Con `?include_structured=true` añade el JSON estructurado:
+
+```http
+GET /api/v1/cvs/2f4c9d8e-7a5b-4c1d-9e0f-123456789abc/content?include_structured=true
+```
+
+```json
+{
+  "id": "2f4c9d8e-7a5b-4c1d-9e0f-123456789abc",
+  "status": "PARSED",
+  "raw_text": "Texto extraído del CV original...",
+  "characters_extracted": 1234,
+  "structured_cv": {
+    "personal_info": {},
+    "technical_data": {}
+  }
+}
+```
+
+Si el CV está en `UPLOADED` o `PARSING`, devuelve `409` con `action_required: "WAIT_FOR_PARSING"`; si está en `ERROR`, `409` con `error_code` y `action_required: "REUPLOAD_CV"`; si no existe o pertenece a otro usuario, `404`.
 
 #### `GET /api/v1/cvs`
 
