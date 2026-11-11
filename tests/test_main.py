@@ -29,6 +29,7 @@ def test_the_openapi_exposes_every_route() -> None:
         "/api/v1/auth/register",
         "/api/v1/cvs",
         "/api/v1/cvs/{cv_id}",
+        "/api/v1/cvs/{cv_id}/content",
         "/api/v1/cvs/{cv_id}/optimize",
         "/health",
     ]

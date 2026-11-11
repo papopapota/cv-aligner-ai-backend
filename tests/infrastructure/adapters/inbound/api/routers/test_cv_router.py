@@ -21,6 +21,7 @@ from src.domain.entities.user import User
 from src.domain.errors import CVFailedError, CVNotFoundError, CVNotReadyError
 from src.domain.optimized_cv import OptimizedCV
 from src.domain.personal_info import Location, PersonalInfo, ProfessionalLinks
+from src.domain.structured_cv import StructuredCV
 from src.infrastructure.adapters.inbound.api.routers.auth_router import (
     get_user_repository,
 )
@@ -232,6 +233,110 @@ async def test_get_returns_404_for_an_unknown_cv(
 
     response = await client.get(
         f"/api/v1/cvs/{uuid4()}",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "The CV does not exist."}
+
+
+async def test_get_content_returns_the_raw_text(
+    client: AsyncClient,
+    query_use_case: AsyncMock,
+) -> None:
+    cv = _cv(status=CVStatus.PARSED, raw_text="Ana Developer")
+    query_use_case.get_content.return_value = cv
+
+    response = await client.get(
+        f"/api/v1/cvs/{cv.id}/content",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == str(cv.id)
+    assert body["status"] == "PARSED"
+    assert body["raw_text"] == "Ana Developer"
+    assert body["characters_extracted"] == len("Ana Developer")
+    assert "structured_cv" not in body
+    query_use_case.get_content.assert_awaited_once_with(cv.id, _USER_ID)
+
+
+async def test_get_content_can_include_the_structured_cv(
+    client: AsyncClient,
+    query_use_case: AsyncMock,
+) -> None:
+    cv = _cv(
+        status=CVStatus.PARSED,
+        raw_text="Ana Developer",
+        structured_cv=StructuredCV(
+            personal_info=PersonalInfo(full_name="Ana Developer")
+        ),
+    )
+    query_use_case.get_content.return_value = cv
+
+    response = await client.get(
+        f"/api/v1/cvs/{cv.id}/content?include_structured=true",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["structured_cv"]["personal_info"]["full_name"] == "Ana Developer"
+
+
+async def test_get_content_returns_409_when_the_cv_is_not_ready(
+    client: AsyncClient,
+    query_use_case: AsyncMock,
+) -> None:
+    query_use_case.get_content.side_effect = CVNotReadyError(
+        "The CV content is not ready yet."
+    )
+
+    response = await client.get(
+        f"/api/v1/cvs/{uuid4()}/content",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "The CV content is not ready yet.",
+        "action_required": "WAIT_FOR_PARSING",
+    }
+
+
+async def test_get_content_returns_409_when_the_cv_failed(
+    client: AsyncClient,
+    query_use_case: AsyncMock,
+) -> None:
+    query_use_case.get_content.side_effect = CVFailedError(
+        "PARSE_FAILED",
+        "The CV could not be processed.",
+    )
+
+    response = await client.get(
+        f"/api/v1/cvs/{uuid4()}/content",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "The CV could not be processed.",
+        "error_code": "PARSE_FAILED",
+        "action_required": "REUPLOAD_CV",
+    }
+
+
+async def test_get_content_returns_404_for_an_unknown_cv(
+    client: AsyncClient,
+    query_use_case: AsyncMock,
+) -> None:
+    query_use_case.get_content.side_effect = CVNotFoundError(
+        "The CV does not exist."
+    )
+
+    response = await client.get(
+        f"/api/v1/cvs/{uuid4()}/content",
         headers=_auth_headers(),
     )
 

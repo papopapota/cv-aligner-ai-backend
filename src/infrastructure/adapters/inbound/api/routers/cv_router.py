@@ -4,7 +4,15 @@ from collections.abc import Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.application.ports.inbound.cv_optimization_use_case import (
@@ -27,6 +35,7 @@ from src.composition import (
 )
 from src.domain.entities.user import User
 from src.infrastructure.adapters.inbound.api.dto.cv_dto import (
+    CVContentResponse,
     CVOptimizeRequest,
     CVOptimizeResponse,
     CVStatusResponse,
@@ -121,6 +130,28 @@ async def get_cv(
 ) -> CVStatusResponse:
     cv = await use_case.get(cv_id, current_user.id)
     return CVStatusResponse.from_domain(cv)
+
+
+@router.get(
+    "/{cv_id}/content",
+    response_model=CVContentResponse,
+    response_model_exclude_none=True,
+    summary="Get the extracted content of a parsed CV",
+)
+async def get_cv_content(
+    cv_id: UUID,
+    include_structured: bool = Query(
+        False,
+        description="Include the structured CV JSON in the response.",
+    ),
+    current_user: User = Depends(get_current_user),
+    use_case: CVQueryUseCase = Depends(get_cv_query_use_case),
+) -> CVContentResponse:
+    cv = await use_case.get_content(cv_id, current_user.id)
+    return CVContentResponse.from_domain(
+        cv,
+        include_structured=include_structured,
+    )
 
 
 @router.post(

@@ -27,6 +27,14 @@ class CVRepositoryPort(ABC):
         """
 
     @abstractmethod
+    async def get_status_by_id(self, cv_id: UUID, user_id: int) -> CV | None:
+        """Return the CV metadata without loading its content."""
+
+    @abstractmethod
+    async def list_status_by_user(self, user_id: int) -> list[CV]:
+        """List the CV metadata owned by a user without loading content."""
+
+    @abstractmethod
     async def update_status(self, cv_id: UUID, status: CVStatus) -> CV | None:
         """Update the lifecycle status of a CV."""
 

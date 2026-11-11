@@ -154,6 +154,83 @@ async def test_get_by_id_unscoped_returns_any_cv(
     assert await repository.get_by_id_unscoped(uuid4()) is None
 
 
+async def test_get_status_by_id_omits_the_content(
+    session: AsyncSession,
+    repository: SQLAlchemyCVRepository,
+) -> None:
+    user = await _create_user(session)
+    created = await repository.create(
+        _cv(
+            user.id,
+            status=CVStatus.PARSED,
+            raw_text="Ana Developer",
+            structured_cv=_structured_cv(),
+        )
+    )
+
+    found = await repository.get_status_by_id(created.id, user.id)
+
+    assert found is not None
+    assert found.id == created.id
+    assert found.status is CVStatus.PARSED
+    assert found.raw_text is None
+    assert found.structured_cv is None
+
+
+async def test_get_status_by_id_hides_cvs_owned_by_another_user(
+    session: AsyncSession,
+    repository: SQLAlchemyCVRepository,
+) -> None:
+    owner = await _create_user(session, "owner@example.com")
+    other = await _create_user(session, "other@example.com")
+    created = await repository.create(_cv(owner.id))
+
+    assert await repository.get_status_by_id(created.id, other.id) is None
+    assert await repository.get_status_by_id(created.id, owner.id) is not None
+
+
+async def test_get_status_by_id_returns_none_when_missing(
+    repository: SQLAlchemyCVRepository,
+) -> None:
+    assert await repository.get_status_by_id(uuid4(), 1) is None
+
+
+async def test_list_status_by_user_omits_the_content(
+    session: AsyncSession,
+    repository: SQLAlchemyCVRepository,
+) -> None:
+    owner = await _create_user(session, "owner@example.com")
+    other = await _create_user(session, "other@example.com")
+    first = await repository.create(_cv(owner.id))
+    second = await repository.create(
+        _cv(
+            owner.id,
+            status=CVStatus.PARSED,
+            raw_text="Ana Developer",
+            structured_cv=_structured_cv(),
+        )
+    )
+    await repository.create(_cv(other.id))
+
+    await session.execute(
+        update(CVModel)
+        .where(CVModel.id == first.id)
+        .values(created_at=datetime(2020, 1, 1))
+    )
+    await session.execute(
+        update(CVModel)
+        .where(CVModel.id == second.id)
+        .values(created_at=datetime(2021, 1, 1))
+    )
+    await session.commit()
+
+    listed = await repository.list_status_by_user(owner.id)
+
+    assert [cv.id for cv in listed] == [second.id, first.id]
+    assert all(cv.raw_text is None for cv in listed)
+    assert all(cv.structured_cv is None for cv in listed)
+
+
 async def test_update_status_changes_the_lifecycle_state(
     session: AsyncSession,
     repository: SQLAlchemyCVRepository,

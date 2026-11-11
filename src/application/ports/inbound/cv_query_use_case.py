@@ -12,3 +12,11 @@ class CVQueryUseCase(ABC):
     @abstractmethod
     async def list(self, user_id: int) -> list[CV]:
         """List the CVs owned by ``user_id``."""
+
+    @abstractmethod
+    async def get_content(self, cv_id: UUID, user_id: int) -> CV:
+        """Return a parsed CV with its extracted content.
+
+        Raise ``CVNotFoundError`` when it does not exist, ``CVFailedError``
+        when processing failed and ``CVNotReadyError`` while it is not ready.
+        """

@@ -5,12 +5,28 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from src.application.ports.out.cv_repository_port import CVRepositoryPort
 from src.domain.cv_status import CVStatus
 from src.domain.entities.cv import CV
 from src.domain.structured_cv import StructuredCV
 from src.infrastructure.adapters.out.repositories.models import CVModel
+
+_STATUS_COLUMNS = (
+    CVModel.id,
+    CVModel.user_id,
+    CVModel.s3_key,
+    CVModel.filename,
+    CVModel.content_type,
+    CVModel.size_bytes,
+    CVModel.sha256,
+    CVModel.status,
+    CVModel.error_code,
+    CVModel.error_message,
+    CVModel.created_at,
+    CVModel.updated_at,
+)
 
 
 class SQLAlchemyCVRepository(CVRepositoryPort):
@@ -37,6 +53,25 @@ class SQLAlchemyCVRepository(CVRepositoryPort):
             status=CVStatus(model.status),
             raw_text=model.raw_text,
             structured_cv=structured_cv,
+            error_code=model.error_code,
+            error_message=model.error_message,
+            created_at=model.created_at,
+            updated_at=model.updated_at,
+        )
+
+    @staticmethod
+    def _to_status_domain(model: CVModel) -> CV:
+        return CV(
+            id=model.id,
+            user_id=model.user_id,
+            s3_key=model.s3_key,
+            filename=model.filename,
+            content_type=model.content_type,
+            size_bytes=model.size_bytes,
+            sha256=model.sha256,
+            status=CVStatus(model.status),
+            raw_text=None,
+            structured_cv=None,
             error_code=model.error_code,
             error_message=model.error_message,
             created_at=model.created_at,
@@ -86,6 +121,29 @@ class SQLAlchemyCVRepository(CVRepositoryPort):
         if model is None:
             return None
         return self._to_domain(model)
+
+    async def get_status_by_id(self, cv_id: UUID, user_id: int) -> CV | None:
+        result = await self._session.execute(
+            select(CVModel)
+            .options(load_only(*_STATUS_COLUMNS))
+            .where(
+                CVModel.id == cv_id,
+                CVModel.user_id == user_id,
+            )
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            return None
+        return self._to_status_domain(model)
+
+    async def list_status_by_user(self, user_id: int) -> list[CV]:
+        result = await self._session.execute(
+            select(CVModel)
+            .options(load_only(*_STATUS_COLUMNS))
+            .where(CVModel.user_id == user_id)
+            .order_by(CVModel.created_at.desc())
+        )
+        return [self._to_status_domain(model) for model in result.scalars().all()]
 
     async def update_status(self, cv_id: UUID, status: CVStatus) -> CV | None:
         if status is CVStatus.ERROR:

@@ -77,6 +77,34 @@ class CVStatusResponse(BaseModel):
         )
 
 
+class CVContentResponse(BaseModel):
+    id: UUID
+    status: str
+    raw_text: str
+    characters_extracted: int
+    structured_cv: dict[str, object] | None = None
+
+    @classmethod
+    def from_domain(
+        cls,
+        cv: CV,
+        include_structured: bool = False,
+    ) -> CVContentResponse:
+        if cv.raw_text is None:
+            raise ValueError("The CV content is not available.")
+        return cls(
+            id=cv.id,
+            status=cv.status.value,
+            raw_text=cv.raw_text,
+            characters_extracted=len(cv.raw_text),
+            structured_cv=(
+                cv.structured_cv.to_dict()
+                if include_structured and cv.structured_cv is not None
+                else None
+            ),
+        )
+
+
 class CVOptimizeRequest(BaseModel):
     job_description: str = Field(
         ...,
