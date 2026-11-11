@@ -368,6 +368,16 @@ Cada archivo en `src/` tiene su espejo en `tests/`. Las pruebas de adaptadores i
 uv run pytest
 ```
 
+### TEST COVERAGE
+Reporte en terminal
+```
+uv run pytest --cov=src --cov-report=term-missing
+```
+
+Reporte en Html interactivo
+```
+uv run pytest --cov=src --cov-report=html
+```
 ## Pre-commit
 
 Hooks locales que se ejecutan en cada `git commit`, limitados a linting y pruebas relacionadas con los archivos staged:
