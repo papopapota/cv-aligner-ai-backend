@@ -5,19 +5,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.composition import build_file_storage, build_optimize_cv_use_case
+from src.composition import build_file_storage, build_orchestrator
 from src.domain.errors import (
     CVFailedError,
     CVNotFoundError,
     CVNotReadyError,
     InvalidUploadError,
     StorageError,
-)
-from src.infrastructure.adapters.inbound.api.cv_controller import (
-    router as cv_router,
-)
-from src.infrastructure.adapters.inbound.api.cv_optimize_controller import (
-    router as cv_optimize_router,
 )
 from src.infrastructure.adapters.inbound.api.domain_error_handler import (
     handle_cv_failed,
@@ -42,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    build_optimize_cv_use_case()
+    build_orchestrator()
     try:
         await build_file_storage().ensure_bucket()
     except StorageError:
@@ -73,8 +67,6 @@ app.add_exception_handler(CVNotFoundError, handle_cv_not_found)
 app.add_exception_handler(CVNotReadyError, handle_cv_not_ready)
 app.add_exception_handler(CVFailedError, handle_cv_failed)
 app.add_exception_handler(StorageError, handle_storage_error)
-app.include_router(cv_router)
-app.include_router(cv_optimize_router)
 app.include_router(cvs_router)
 app.include_router(auth_router, prefix="/auth")
 app.include_router(application_router)

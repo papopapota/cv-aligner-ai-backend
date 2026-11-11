@@ -30,14 +30,20 @@ def test_the_openapi_exposes_every_route() -> None:
         "/auth/login",
         "/auth/refresh",
         "/auth/register",
-        "/cv/optimize",
-        "/cv/upload",
         "/health",
     ]
 
-def test_the_optimize_route_is_declared_as_multipart() -> None:
-    operation = app.openapi()["paths"]["/cv/optimize"]["post"]
+def test_the_cv_upload_route_is_declared_as_multipart() -> None:
+    operation = app.openapi()["paths"]["/api/v1/cvs"]["post"]
 
     content_types = operation["requestBody"]["content"].keys()
 
     assert "multipart/form-data" in content_types
+
+
+def test_the_cv_optimize_route_accepts_json() -> None:
+    operation = app.openapi()["paths"]["/api/v1/cvs/{cv_id}/optimize"]["post"]
+
+    content_types = operation["requestBody"]["content"].keys()
+
+    assert "application/json" in content_types

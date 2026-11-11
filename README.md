@@ -88,26 +88,37 @@ El adaptador (`OpenAILLMAgentAdapter`) envía mensajes `system` por rol (extract
 
 En cada reintento el writer recibe el CV optimizado anterior y el motivo (`reason`) del auditor para corregir las carencias señaladas. El adaptador registra por log el `variance_score` y el `reason` de cada intento (nivel INFO/WARNING) para diagnosticar por qué no converge.
 
-## Base de datos y migraciones
+## Base de datos, migraciones y almacenamiento
 
 La persistencia usa SQLAlchemy 2.0 async con `asyncpg`. La configuración se toma de las variables `DB_*` del `.env` (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`).
 
-### Levantar PostgreSQL con Docker Compose
+Los CVs se guardan en S3 (o LocalStack en desarrollo). La app verifica/crea el bucket al arrancar mediante `S3StorageAdapter.ensure_bucket()`; si el almacenamiento no está disponible, registra un warning y continúa.
 
-El `compose.yaml` levanta únicamente el servicio de base de datos. Usa las variables `DB_*` del `.env` y persiste los datos en el volumen `postgres_data`:
+| Variable | Uso |
+| --- | --- |
+| `S3_ENDPOINT_URL` | Endpoint de S3. LocalStack: `http://localhost:4566`. Vacío usa AWS. |
+| `S3_REGION` | Región de S3 (default `us-east-1`). |
+| `S3_ACCESS_KEY_ID` | Access key de S3/LocalStack. |
+| `S3_SECRET_ACCESS_KEY` | Secret key de S3/LocalStack. |
+| `S3_BUCKET` | Bucket de los CVs (default `cv-aligner-cvs`). |
+| `S3_USE_SSL` | Usa TLS contra S3 (`false` para LocalStack local). |
+
+### Levantar PostgreSQL y LocalStack con Docker Compose
+
+El `compose.yaml` levanta PostgreSQL, LocalStack (servicio S3) y un contenedor de inicialización que crea el bucket. Usa las variables `DB_*` y `S3_*` del `.env`:
 
 ```bash
-docker compose up -d db
+docker compose up -d db localstack
 docker compose ps
 ```
 
-Espera a que el servicio aparezca como `healthy` antes de aplicar las migraciones. Para detenerlo:
+Espera a que `db` y `localstack` aparezcan como `healthy` antes de aplicar las migraciones o subir CVs. Para detenerlo:
 
 ```bash
 docker compose down
 ```
 
-`docker compose down -v` también elimina el volumen y, por tanto, los datos de la base de datos.
+`docker compose down -v` también elimina el volumen y, por tanto, los datos de PostgreSQL.
 
 El esquema se gestiona con Alembic:
 
@@ -155,24 +166,24 @@ Los pesos deben sumar 1. Antes de generar embeddings y calcular TF-IDF se ofusca
 
 ## Endpoints
 
-| Método | Ruta            | Descripción                                | Respuesta                  |
-| ------ | --------------- | ------------------------------------------ | -------------------------- |
-| GET    | `/health`       | Verificación de estado                     | `{"status": "ok"}`         |
-| POST   | `/auth/register`| Registro de usuario (hash bcrypt)          | Usuario creado             |
-| POST   | `/auth/login`   | Login con email y contraseña               | Tokens JWT                 |
-| POST   | `/auth/refresh` | Renueva tokens con un refresh token        | Tokens JWT                 |
-| POST   | `/cv/upload`    | Carga de CV y job spec, ambos en multipart | CV y spec parseados        |
-| POST   | `/cv/optimize`  | Pipeline multi-agente sobre el CV y la spec | CV optimizado y auditado   |
-| GET    | `/applications` | Lista las postulaciones del usuario autenticado | Array de postulaciones |
-| POST   | `/applications` | Crea una postulación para el usuario autenticado | Postulación creada (`201`) |
-| PATCH  | `/applications/{id}/status` | Actualiza el estado de una postulación | Postulación actualizada |
+| Método | Ruta | Descripción | Respuesta |
+| ------ | ---- | ----------- | --------- |
+| GET | `/health` | Verificación de estado | `{"status": "ok"}` |
+| POST | `/auth/register` | Registro de usuario (hash bcrypt) | Usuario creado |
+| POST | `/auth/login` | Login con email y contraseña | Tokens JWT |
+| POST | `/auth/refresh` | Renueva tokens con un refresh token | Tokens JWT |
+| POST | `/api/v1/cvs` | Sube un CV a S3 e inicia el parseo en background | CV creado (`202`) |
+| GET | `/api/v1/cvs` | Lista los CVs del usuario autenticado | Array de CVs |
+| GET | `/api/v1/cvs/{cv_id}` | Consulta el estado/procesamiento de un CV | Estado del CV |
+| POST | `/api/v1/cvs/{cv_id}/optimize` | Optimiza un CV ya parseado contra una oferta | CV optimizado |
+| GET | `/applications` | Lista las postulaciones del usuario autenticado | Array de postulaciones |
+| POST | `/applications` | Crea una postulación para el usuario autenticado | Postulación creada (`201`) |
+| PATCH | `/applications/{id}/status` | Actualiza el estado de una postulación | Postulación actualizada |
 | DELETE | `/applications/{id}` | Elimina una postulación del usuario autenticado | `204` sin body |
 
-Ambos endpoints `/cv/*` reciben los mismos dos campos multipart (`cv_file` y `job_description_file`), porque el flujo es sin estado: `/cv/optimize` vuelve a parsear los archivos en lugar de guardarlos.
+Todos los endpoints de CV y postulaciones requieren `Authorization: Bearer <access_token>`. El dueño se obtiene del `sub` del JWT (email), nunca de un `user_id` enviado por el cliente.
 
 ### Contrato de `/applications`
-
-Los cuatro endpoints requieren `Authorization: Bearer <access_token>`. El dueño de la postulación se obtiene del `sub` del JWT (el email del usuario), nunca de un `user_id` enviado por el cliente.
 
 ```http
 GET /applications
@@ -217,33 +228,109 @@ DELETE /applications/1
 
 Elimina la postulación y responde `204 No Content` sin body. Si no existe o pertenece a otro usuario, devuelve `404`; sin token o con un token inválido/expirado, `401`.
 
-### Contrato de `POST /cv/optimize`
+### Contrato de `/api/v1/cvs`
 
-Ejecuta el grafo de LangGraph: la extracción del CV y la de la oferta arrancan en paralelo; el analyzer espera a ambas, el writer espera al analyzer y el auditor del CV original se solapa con el writer. En cada intento, el auditor del CV optimizado y su extractor de perfil se ejecutan concurrentemente. El score del CV original se calcula antes de optimizar y se devuelve como `original_ic`/`original_per_dimension`; el resultado del CV optimizado se devuelve como `optimized_ic`/`optimized_per_dimension`. Si la varianza del CV optimizado supera el umbral **o** el `IC` del CV optimizado queda por debajo de `MATCH_TARGET_IC`, el writer se reintenta hasta 3 intentos totales.
+El flujo es asíncrono y con estado: el CV se guarda en S3, se procesa en background y el cliente consulta su estado hasta que esté listo para optimizar.
 
-| Campo         | Extensiones     |
-| ------------- | --------------- |
-| `cv_file`     | `.pdf`, `.docx` |
-| `job_description_file` | `.txt`  |
+#### `POST /api/v1/cvs`
 
-Respuesta: `optimized_content`, `original_variance_score`, `optimized_variance_score`, `writer_attempts` e `is_within_threshold`. Incluye `original_ic`/`original_per_dimension` (evaluación antes de optimizar) y `optimized_ic`/`optimized_per_dimension` (mejor versión generada). `is_within_threshold` se calcula con `optimized_variance_score`, `optimized_ic` y `gap_report` (brechas restantes; vacío si no hay análisis). Los cuatro campos de IC/desglose son `null`/`{}` si el scorer no está disponible.
+Multipart con un único archivo `cv_file`:
 
-Al agotar los reintentos se devuelve la **mejor versión** obtenida (la de mayor `IC`) con su gap report (best-effort). `400` para formatos o tamaños inválidos, `422` si falta un campo.
+| Campo | Tipo | Extensiones |
+| ----- | ---- | ----------- |
+| `cv_file` | archivo | `.pdf`, `.docx` |
+
+El archivo se limita a 10 MB. La respuesta es `202 Accepted`:
+
+```json
+{
+  "id": "2f4c9d8e-7a5b-4c1d-9e0f-123456789abc",
+  "filename": "cv.pdf",
+  "content_type": "application/pdf",
+  "size_bytes": 102400,
+  "sha256": "…",
+  "status": "UPLOADED",
+  "action_required": "WAIT_FOR_PARSING",
+  "created_at": "2026-01-15T10:30:00Z",
+  "updated_at": "2026-01-15T10:30:00Z"
+}
+```
+
+El parseo/estructuración se ejecuta en una tarea de background de FastAPI (in-process, no durable). Un formato no permitido, archivo vacío, texto extraído vacío o exceder el tamaño devuelven `400`; si falta `cv_file`, `422`.
+
+#### `GET /api/v1/cvs/{cv_id}`
+
+Devuelve el estado actual del CV. Es el endpoint de polling:
+
+```json
+{
+  "id": "2f4c9d8e-7a5b-4c1d-9e0f-123456789abc",
+  "filename": "cv.pdf",
+  "content_type": "application/pdf",
+  "size_bytes": 102400,
+  "sha256": "…",
+  "status": "PARSED",
+  "error_code": null,
+  "error_message": null,
+  "action_required": null,
+  "created_at": "2026-01-15T10:30:00Z",
+  "updated_at": "2026-01-15T10:31:00Z"
+}
+```
+
+| Estado | Significado | `action_required` |
+| ------ | ----------- | ----------------- |
+| `UPLOADED` | Guardado en S3, pendiente de procesar | `WAIT_FOR_PARSING` |
+| `PARSING` | Parseo/estructuración en curso | `WAIT_FOR_PARSING` |
+| `PARSED` | Listo para optimizar | `null` |
+| `ERROR` | El procesamiento falló | `REUPLOAD_CV` |
+
+Un CV en `ERROR` sigue devolviendo `200` con `error_code` y `error_message`. El objeto S3 se conserva; actualmente no existe endpoint de reintento. Un `cv_id` inexistente o de otro usuario devuelve `404`.
+
+#### `GET /api/v1/cvs`
+
+Lista los CVs del usuario autenticado con el mismo esquema de estado. No incluye el texto del CV ni el JSON estructurado.
+
+#### `POST /api/v1/cvs/{cv_id}/optimize`
+
+Requiere que el CV esté en `PARSED`. El body es JSON:
+
+```http
+POST /api/v1/cvs/2f4c9d8e-7a5b-4c1d-9e0f-123456789abc/optimize
+Content-Type: application/json
+
+{ "job_description": "Buscamos Python developer con FastAPI y PostgreSQL." }
+```
+
+También se acepta el alias `job_description_text`. La respuesta incluye la cabecera personal inmutable, el cuerpo técnico optimizado y las métricas de auditoría:
+
+```json
+{
+  "optimized_content": "Ana Developer\nBackend Developer\n…\n\n<contenido optimizado>",
+  "optimized_body": "<contenido técnico optimizado>",
+  "original_variance_score": 0.72,
+  "optimized_variance_score": 0.12,
+  "writer_attempts": 2,
+  "is_within_threshold": true,
+  "original_ic": 61.0,
+  "optimized_ic": 89.5,
+  "original_per_dimension": {"technical_skills": 0.3},
+  "optimized_per_dimension": {"technical_skills": 0.9},
+  "gap_report": "",
+  "personal_info": {
+    "full_name": "Ana Developer",
+    "headline": "Backend Developer",
+    "email": "ana@example.com",
+    "phone": "",
+    "location": {"city": "Lima", "country": "Peru"},
+    "links": {"linkedin": "", "github": "github.com/ana", "portfolio": ""}
+  }
+}
+```
+
+El optimizador solo recibe los datos técnicos (`summary`, skills, experiencia, proyectos, educación, certificaciones, idiomas); la información personal se reinserta después sin pasar por el LLM. Si el CV no está listo devuelve `409` con `action_required: "WAIT_FOR_PARSING"`; si falló, `409` con `error_code` y `action_required: "REUPLOAD_CV"`; si no existe o es de otro usuario, `404`. Un `job_description` vacío devuelve `422`.
 
 > **Nota:** el pipeline llama a un LLM real compatible OpenAI (SDK `openai`). Requiere `LLM_API_KEY` en `.env`; si no está configurada, la app no arranca. Para desarrollo sin clave, apunta `LLM_BASE_URL` a un servidor local como Ollama o LM Studio.
-
-### Contrato de `POST /cv/upload`
-
-Envía dos campos multipart. La job description es **un archivo `.txt`**, no texto pegado:
-
-| Campo                 | Tipo       | Extensiones        |
-| --------------------- | ---------- | ------------------ |
-| `cv_file`             | archivo    | `.pdf`, `.docx`    |
-| `job_description_file`| archivo    | `.txt`             |
-
-Ambos archivos están limitados a 10 MB. La respuesta incluye los metadatos y el texto extraído de cada uno (`extracted_text` / `jd_extracted_text`, con sus respectivos `sha256` y `characters_extracted`).
-
-Un formato no permitido, un archivo vacío, texto extraído vacío o superar el límite devuelven `400`. Si falta algún campo, `422`.
 
 ## Arquitectura
 
