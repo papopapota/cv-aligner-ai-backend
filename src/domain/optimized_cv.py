@@ -5,6 +5,7 @@ from src.domain.audit_rules import (
     MAX_VARIANCE_THRESHOLD,
 )
 from src.domain.errors import InvalidUploadError
+from src.domain.personal_info import PersonalInfo, render_personal_header
 
 _MIN_VARIANCE_SCORE = 0.0
 _MAX_VARIANCE_SCORE = 1.0
@@ -24,6 +25,7 @@ class OptimizedCV:
     original_per_dimension: dict[str, float] = field(default_factory=dict)
     optimized_per_dimension: dict[str, float] = field(default_factory=dict)
     gap_report: str = ""
+    personal_info: PersonalInfo | None = None
 
     def __post_init__(self) -> None:
         if not self.content.strip():
@@ -77,3 +79,10 @@ class OptimizedCV:
             or self.optimized_ic >= DEFAULT_IC_TARGET
         )
         return variance_passed and ic_passed
+
+    @property
+    def full_content(self) -> str:
+        header = render_personal_header(self.personal_info)
+        if not header:
+            return self.content
+        return f"{header}\n\n{self.content}"

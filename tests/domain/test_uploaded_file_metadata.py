@@ -161,3 +161,19 @@ def test_the_validation_policy_does_not_leak_into_equality_or_repr() -> None:
         "size_bytes",
         "sha256",
     ]
+
+
+def test_job_description_text_metadata_derives_size_and_digest() -> None:
+    text = "We are looking for a Python developer."
+
+    metadata = UploadedFileMetadata.from_job_description_text(text)
+
+    assert metadata.filename == "job_description.txt"
+    assert metadata.content_type == "text/plain"
+    assert metadata.size_bytes == len(text.encode("utf-8"))
+    assert metadata.sha256 == hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def test_job_description_text_metadata_rejects_empty_text() -> None:
+    with pytest.raises(EmptyContentError):
+        UploadedFileMetadata.from_job_description_text("")
