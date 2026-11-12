@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, Field
 
+from src.domain.cv_sections import CVSections as CVSectionsVO
 from src.domain.cv_status import CVStatus
 from src.domain.entities.cv import CV
 from src.domain.optimized_cv import OptimizedCV
@@ -19,6 +20,20 @@ def action_required_for(status: CVStatus) -> str | None:
     if status in (CVStatus.UPLOADED, CVStatus.PARSING):
         return ACTION_REQUIRED_WAIT_FOR_PARSING
     return None
+
+
+class CVSections(BaseModel):
+    summary: str = ""
+    technical_skills: str = ""
+    experience: str = ""
+    projects: str = ""
+    education: str = ""
+    certifications: str = ""
+    languages: str = ""
+
+    @classmethod
+    def from_domain(cls, sections: CVSectionsVO) -> CVSections:
+        return cls(**sections.to_dict())
 
 
 class CVUploadResponse(BaseModel):
@@ -54,6 +69,7 @@ class CVStatusResponse(BaseModel):
     size_bytes: int
     sha256: str
     status: str
+    parsed_sections: CVSections | None = None
     error_code: str | None
     error_message: str | None
     action_required: str | None
@@ -62,6 +78,42 @@ class CVStatusResponse(BaseModel):
 
     @classmethod
     def from_domain(cls, cv: CV) -> CVStatusResponse:
+        parsed_sections = (
+            CVSections.from_domain(cv.parsed_sections)
+            if cv.status is CVStatus.PARSED and cv.parsed_sections is not None
+            else None
+        )
+        return cls(
+            id=cv.id,
+            filename=cv.filename,
+            content_type=cv.content_type,
+            size_bytes=cv.size_bytes,
+            sha256=cv.sha256,
+            status=cv.status.value,
+            parsed_sections=parsed_sections,
+            error_code=cv.error_code,
+            error_message=cv.error_message,
+            action_required=action_required_for(cv.status),
+            created_at=cv.created_at,
+            updated_at=cv.updated_at,
+        )
+
+
+class CVListResponse(BaseModel):
+    id: UUID
+    filename: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+    status: str
+    error_code: str | None
+    error_message: str | None
+    action_required: str | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+    @classmethod
+    def from_domain(cls, cv: CV) -> CVListResponse:
         return cls(
             id=cv.id,
             filename=cv.filename,
@@ -117,6 +169,7 @@ class CVOptimizeRequest(BaseModel):
 class CVOptimizeResponse(BaseModel):
     optimized_content: str
     optimized_body: str
+    optimized_sections: CVSections
     original_variance_score: float
     optimized_variance_score: float
     writer_attempts: int
@@ -132,7 +185,10 @@ class CVOptimizeResponse(BaseModel):
     def from_domain(cls, optimized: OptimizedCV) -> CVOptimizeResponse:
         return cls(
             optimized_content=optimized.full_content,
-            optimized_body=optimized.content,
+            optimized_body=optimized.body,
+            optimized_sections=CVSections.from_domain(
+                optimized.optimized_sections
+            ),
             original_variance_score=optimized.original_variance_score,
             optimized_variance_score=optimized.optimized_variance_score,
             writer_attempts=optimized.writer_attempts,

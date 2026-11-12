@@ -28,6 +28,8 @@ _STATUS_COLUMNS = (
     CVModel.updated_at,
 )
 
+_DETAIL_STATUS_COLUMNS = (*_STATUS_COLUMNS, CVModel.structured_json)
+
 
 class SQLAlchemyCVRepository(CVRepositoryPort):
     """Implementation of CVRepositoryPort using SQLAlchemy 2.0 async sessions."""
@@ -53,6 +55,11 @@ class SQLAlchemyCVRepository(CVRepositoryPort):
             status=CVStatus(model.status),
             raw_text=model.raw_text,
             structured_cv=structured_cv,
+            parsed_sections=(
+                structured_cv.to_sections()
+                if structured_cv is not None
+                else None
+            ),
             error_code=model.error_code,
             error_message=model.error_message,
             created_at=model.created_at,
@@ -60,7 +67,15 @@ class SQLAlchemyCVRepository(CVRepositoryPort):
         )
 
     @staticmethod
-    def _to_status_domain(model: CVModel) -> CV:
+    def _to_status_domain(
+        model: CVModel,
+        include_sections: bool = False,
+    ) -> CV:
+        parsed_sections = None
+        if include_sections and model.structured_json is not None:
+            parsed_sections = StructuredCV.from_mapping(
+                model.structured_json
+            ).to_sections()
         return CV(
             id=model.id,
             user_id=model.user_id,
@@ -72,6 +87,7 @@ class SQLAlchemyCVRepository(CVRepositoryPort):
             status=CVStatus(model.status),
             raw_text=None,
             structured_cv=None,
+            parsed_sections=parsed_sections,
             error_code=model.error_code,
             error_message=model.error_message,
             created_at=model.created_at,
@@ -125,7 +141,7 @@ class SQLAlchemyCVRepository(CVRepositoryPort):
     async def get_status_by_id(self, cv_id: UUID, user_id: int) -> CV | None:
         result = await self._session.execute(
             select(CVModel)
-            .options(load_only(*_STATUS_COLUMNS))
+            .options(load_only(*_DETAIL_STATUS_COLUMNS))
             .where(
                 CVModel.id == cv_id,
                 CVModel.user_id == user_id,
@@ -134,7 +150,7 @@ class SQLAlchemyCVRepository(CVRepositoryPort):
         model = result.scalar_one_or_none()
         if model is None:
             return None
-        return self._to_status_domain(model)
+        return self._to_status_domain(model, include_sections=True)
 
     async def list_status_by_user(self, user_id: int) -> list[CV]:
         result = await self._session.execute(

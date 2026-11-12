@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from collections.abc import Mapping
 
@@ -9,6 +10,7 @@ from src.application.ports.out.match_scorer_port import MatchScorerPort
 from src.domain.audit_rules import MAX_VARIANCE_THRESHOLD, MAX_WRITER_ATTEMPTS
 from src.domain.candidate_cv import CandidateCV
 from src.domain.compatibility_score import CompatibilityScore
+from src.domain.cv_sections import CVSections
 from src.domain.errors import InvalidUploadError
 from src.domain.job_description import JobDescription
 from src.domain.semantic_profile import SemanticProfile
@@ -17,6 +19,7 @@ from src.domain.uploaded_file_metadata import UploadedFileMetadata
 from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
     LangGraphOrchestratorAdapter,
     parse_audit_reason,
+    parse_cv_sections,
     parse_semantic_profile,
     parse_variance_score,
 )
@@ -28,6 +31,20 @@ _CV_TEXT = "Python backend engineer with fastapi."
 _JOB_TEXT = "Looking for a FastAPI developer."
 _GAP_TEXT = "GAP ANALYSIS: missing kubernetes and postgres depth."
 _WRITER_TEXT = "OPTIMIZED CV: python backend engineer with fastapi and postgres."
+
+
+def _writer_json(summary: str, **overrides: str) -> str:
+    payload = {
+        "summary": summary,
+        "technical_skills": "",
+        "experience": "",
+        "projects": "",
+        "education": "",
+        "certifications": "",
+        "languages": "",
+    }
+    payload.update(overrides)
+    return json.dumps(payload)
 
 
 def _candidate() -> CandidateCV:
@@ -112,6 +129,12 @@ async def test_runs_the_whole_graph_and_approves_a_low_variance() -> None:
     assert optimized.writer_attempts == 1
     assert optimized.is_within_threshold()
     assert optimized.content
+    assert optimized.optimized_sections == CVSections(
+        summary=_WRITER_TEXT,
+        technical_skills="python, fastapi, postgres",
+        experience="backend engineering",
+    )
+    assert optimized.content == optimized.optimized_sections.to_text()
     assert optimized.original_ic is None
     assert optimized.optimized_ic is None
     assert optimized.original_per_dimension == {}
@@ -453,6 +476,36 @@ def test_ignores_unknown_keys() -> None:
     assert profile.technical_skills == "python"
 
 
+def test_parses_the_writer_sections() -> None:
+    sections = parse_cv_sections(
+        _writer_json(
+            "Backend engineer",
+            technical_skills="python",
+            projects="cv-aligner",
+        )
+    )
+
+    assert sections == CVSections(
+        summary="Backend engineer",
+        technical_skills="python",
+        projects="cv-aligner",
+    )
+
+
+def test_parses_sections_wrapped_in_markdown_fences() -> None:
+    sections = parse_cv_sections(
+        f"```json\n{_writer_json('Engineer', languages='english')}\n```"
+    )
+
+    assert sections.summary == "Engineer"
+    assert sections.languages == "english"
+
+
+def test_rejects_writer_text_without_usable_sections() -> None:
+    with pytest.raises(InvalidUploadError):
+        parse_cv_sections("I cannot extract sections")
+
+
 def test_rejects_text_without_any_usable_profile() -> None:
     with pytest.raises(InvalidUploadError):
         parse_semantic_profile("I cannot extract a profile")
@@ -610,7 +663,11 @@ async def test_tracks_the_best_version_while_retrying() -> None:
     scorer = _FakeMatchScorer([_score(90.0), _score(70.0), _score(90.0), _score(60.0)])
     stub = StubLLMAgentAdapter(
         variance_score=0.9,
-        writer_outputs=["first version", "second version", "third version"],
+        writer_outputs=[
+            _writer_json("first version"),
+            _writer_json("second version"),
+            _writer_json("third version"),
+        ],
     )
     orchestrator = LangGraphOrchestratorAdapter(stub, match_scorer=scorer)
 
@@ -623,7 +680,8 @@ async def test_tracks_the_best_version_while_retrying() -> None:
 
     assert state["writer_attempts"] == MAX_WRITER_ATTEMPTS
     assert state["best_ic"] == 90.0
-    assert state["best_text"] == "second version"
+    assert state["best_text"] == "Summary: second version"
+    assert state["best_sections"] == CVSections(summary="second version")
     assert state["best_variance"] == 0.9
     assert state["best_ncos"] == 0.9
     assert state["best_ntfidf"] == 0.0
@@ -669,13 +727,18 @@ async def test_returns_the_best_effort_version_with_its_breakdown() -> None:
     )
     stub = StubLLMAgentAdapter(
         variance_score=0.9,
-        writer_outputs=["first version", "second version", "third version"],
+        writer_outputs=[
+            _writer_json("first version"),
+            _writer_json("second version"),
+            _writer_json("third version"),
+        ],
     )
     orchestrator = LangGraphOrchestratorAdapter(stub, match_scorer=scorer)
 
     optimized = await orchestrator.optimize(_candidate(), _job_description())
 
-    assert optimized.content == "second version"
+    assert optimized.content == "Summary: second version"
+    assert optimized.optimized_sections == CVSections(summary="second version")
     assert optimized.optimized_variance_score == 0.9
     assert optimized.writer_attempts == MAX_WRITER_ATTEMPTS
     assert optimized.original_ic == 90.0

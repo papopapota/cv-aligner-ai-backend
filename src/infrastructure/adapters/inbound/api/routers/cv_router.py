@@ -36,6 +36,7 @@ from src.composition import (
 from src.domain.entities.user import User
 from src.infrastructure.adapters.inbound.api.dto.cv_dto import (
     CVContentResponse,
+    CVListResponse,
     CVOptimizeRequest,
     CVOptimizeResponse,
     CVStatusResponse,
@@ -107,15 +108,15 @@ async def upload_cv(
 
 @router.get(
     "",
-    response_model=list[CVStatusResponse],
+    response_model=list[CVListResponse],
     summary="List the current user's CVs",
 )
 async def list_cvs(
     current_user: User = Depends(get_current_user),
     use_case: CVQueryUseCase = Depends(get_cv_query_use_case),
-) -> list[CVStatusResponse]:
+) -> list[CVListResponse]:
     cvs = await use_case.list(current_user.id)
-    return [CVStatusResponse.from_domain(cv) for cv in cvs]
+    return [CVListResponse.from_domain(cv) for cv in cvs]
 
 
 @router.get(

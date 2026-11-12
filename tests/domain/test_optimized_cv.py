@@ -6,6 +6,7 @@ from src.domain.audit_rules import (
     DEFAULT_IC_TARGET,
     MAX_VARIANCE_THRESHOLD,
 )
+from src.domain.cv_sections import CVSections
 from src.domain.errors import InvalidUploadError
 from src.domain.optimized_cv import OptimizedCV
 from src.domain.personal_info import Location, PersonalInfo, ProfessionalLinks
@@ -25,6 +26,7 @@ def _optimized_cv(
     optimized_per_dimension: dict[str, float] | None = None,
     gap_report: str = "",
     personal_info: PersonalInfo | None = None,
+    optimized_sections: CVSections | None = None,
 ) -> OptimizedCV:
     return OptimizedCV(
         content=content,
@@ -46,6 +48,11 @@ def _optimized_cv(
         ),
         gap_report=gap_report,
         personal_info=personal_info,
+        optimized_sections=(
+            optimized_sections
+            if optimized_sections is not None
+            else CVSections()
+        ),
     )
 
 
@@ -200,6 +207,35 @@ def test_full_content_is_the_technical_content_without_personal_info() -> None:
     optimized = _optimized_cv()
 
     assert optimized.full_content == _CONTENT
+
+
+def test_body_is_rendered_from_the_optimized_sections() -> None:
+    sections = CVSections(
+        summary="Backend engineer",
+        technical_skills="python, fastapi",
+        projects="cv-aligner",
+    )
+    optimized = _optimized_cv(optimized_sections=sections)
+
+    assert optimized.body == sections.to_text()
+    assert optimized.body == (
+        "Summary: Backend engineer\n"
+        "Technical skills: python, fastapi\n"
+        "Projects: cv-aligner"
+    )
+
+
+def test_full_content_uses_the_sections_body() -> None:
+    personal_info = PersonalInfo(full_name="Ana Developer")
+    sections = CVSections(summary="Backend engineer")
+    optimized = _optimized_cv(
+        personal_info=personal_info,
+        optimized_sections=sections,
+    )
+
+    assert optimized.full_content == (
+        "Ana Developer\n\nSummary: Backend engineer"
+    )
 
 
 def test_full_content_prepends_the_immutable_personal_header() -> None:

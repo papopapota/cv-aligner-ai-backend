@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from src.domain.compatibility_score import CompatibilityScore
+from src.domain.cv_sections import CVSections
 from src.domain.semantic_profile import SemanticProfile
 
 
@@ -15,11 +16,13 @@ class SharedState:
     optimized_match: CompatibilityScore | None = None
     gap_analysis: str = ""
     optimized_text: str = ""
+    optimized_sections: CVSections = field(default_factory=CVSections)
     original_variance_score: float = 1.0
     optimized_variance_score: float = 1.0
     audit_reason: str = ""
     writer_attempts: int = 0
     best_text: str = ""
+    best_sections: CVSections = field(default_factory=CVSections)
     best_ic: float = 0.0
     best_variance: float = 1.0
     best_ncos: float = 0.0

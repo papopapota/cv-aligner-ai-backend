@@ -21,7 +21,8 @@ from src.domain.audit_rules import (
 )
 from src.domain.candidate_cv import CandidateCV
 from src.domain.compatibility_score import CompatibilityScore
-from src.domain.errors import InvalidUploadError
+from src.domain.cv_sections import CVSections
+from src.domain.errors import InvalidStructureError, InvalidUploadError
 from src.domain.job_description import JobDescription
 from src.domain.optimized_cv import OptimizedCV
 from src.domain.semantic_profile import SemanticProfile
@@ -79,6 +80,13 @@ def _extract_json_payload(audit: str) -> dict[str, object] | None:
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def parse_cv_sections(text: str) -> CVSections:
+    try:
+        return CVSections.from_json_text(text)
+    except InvalidStructureError as exc:
+        raise InvalidUploadError(str(exc)) from exc
 
 
 def parse_semantic_profile(text: str) -> SemanticProfile:
@@ -186,6 +194,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
                 original_per_dimension=original_per_dimension,
                 optimized_per_dimension=final_state["best_per_dimension"],
                 gap_report=final_state["gap_analysis"],
+                optimized_sections=final_state["best_sections"],
             )
         else:
             optimized = OptimizedCV(
@@ -197,6 +206,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
                 original_ic=original_ic,
                 original_per_dimension=original_per_dimension,
                 gap_report=final_state["gap_analysis"],
+                optimized_sections=final_state["optimized_sections"],
             )
         if baseline_match is not None:
             original_ncos: float | None = baseline_match.ncos
@@ -344,10 +354,11 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
     async def _writer(self, state: SharedState) -> dict[str, object]:
         started_at = time.perf_counter()
         prompt = self._writer_prompt(state)
-        optimized_text = await self._llm_agent.complete(
+        output = await self._llm_agent.complete(
             AgentRole.WRITER,
             prompt,
         )
+        optimized_sections = parse_cv_sections(output)
         attempt = state.writer_attempts + 1
         logger.info(
             "Writer attempt %s finished in %.3fs",
@@ -355,21 +366,34 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
             time.perf_counter() - started_at,
         )
         return {
-            "optimized_text": optimized_text,
+            "optimized_text": optimized_sections.to_text(),
+            "optimized_sections": optimized_sections,
             "writer_attempts": attempt,
         }
 
     def _writer_prompt(self, state: SharedState) -> str:
+        schema = (
+            "Responde únicamente con un JSON que contenga las llaves "
+            "summary, technical_skills, experience, projects, education, "
+            "certifications y languages. Cada valor debe ser texto.\n"
+        )
         if not state.optimized_text:
             return (
+                f"{schema}"
                 f"Job description:\n{state.job_description_text}\n"
                 f"Gaps:\n{state.gap_analysis}\n"
                 f"CV:\n{state.candidate_cv_text}"
             )
+        previous_sections = json.dumps(
+            state.optimized_sections.to_dict(),
+            ensure_ascii=False,
+        )
         return (
+            f"{schema}"
             f"Job description:\n{state.job_description_text}\n"
             f"Gaps:\n{state.gap_analysis}\n"
             f"Previous optimized CV:\n{state.optimized_text}\n"
+            f"Previous optimized sections (JSON):\n{previous_sections}\n"
             f"Auditor feedback (variance {state.optimized_variance_score}):\n"
             f"{state.audit_reason}\n"
             "Corrige específicamente las carencias señaladas por el auditor "
@@ -436,6 +460,7 @@ class LangGraphOrchestratorAdapter(WorkflowOrchestratorPort):
         )
         if state.best_text == "" or optimized_match.ic > state.best_ic:
             updates["best_text"] = state.optimized_text
+            updates["best_sections"] = state.optimized_sections
             updates["best_ic"] = optimized_match.ic
             updates["best_variance"] = optimized_variance_score
             updates["best_ncos"] = optimized_match.ncos

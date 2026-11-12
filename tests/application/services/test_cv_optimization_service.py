@@ -12,6 +12,7 @@ from src.application.ports.out.workflow_orchestrator_port import (
     WorkflowOrchestratorPort,
 )
 from src.application.services.cv_optimization_service import CVOptimizationService
+from src.domain.cv_sections import CVSections
 from src.domain.cv_status import CVStatus
 from src.domain.entities.cv import CV
 from src.domain.errors import (
@@ -63,12 +64,22 @@ def _cv(**overrides: object) -> CV:
     return CV(**values)  # type: ignore[arg-type]
 
 
+def _sections() -> CVSections:
+    return CVSections(
+        summary="Optimized backend engineer body.",
+        technical_skills="python, fastapi",
+        projects="cv-aligner",
+    )
+
+
 def _optimized() -> OptimizedCV:
+    sections = _sections()
     return OptimizedCV(
-        content="Optimized backend engineer body.",
+        content=sections.to_text(),
         original_variance_score=0.8,
         optimized_variance_score=0.1,
         writer_attempts=1,
+        optimized_sections=sections,
     )
 
 
@@ -109,7 +120,8 @@ async def test_optimizes_the_parsed_cv_and_restores_personal_info(
 
     result = await service.execute(cv.id, _USER_ID, _JOB_DESCRIPTION)
 
-    assert result.content == "Optimized backend engineer body."
+    assert result.content == _sections().to_text()
+    assert result.optimized_sections == _sections()
     assert result.personal_info == cv.structured_cv.personal_info  # type: ignore[union-attr]
     assert result.full_content.startswith("Ana Developer\nBackend Developer")
 
@@ -251,7 +263,7 @@ async def test_works_without_an_exporter(
 
     result = await service.execute(uuid4(), _USER_ID, _JOB_DESCRIPTION)
 
-    assert result.content == "Optimized backend engineer body."
+    assert result.content == _sections().to_text()
 
 
 async def test_satisfies_the_inbound_port(service: CVOptimizationService) -> None:

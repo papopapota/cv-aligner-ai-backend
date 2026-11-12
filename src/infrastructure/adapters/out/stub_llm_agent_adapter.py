@@ -7,7 +7,12 @@ _EXTRACTOR_RESPONSE = (
     '"languages": ""}'
 )
 _ANALYZER_RESPONSE = "GAP ANALYSIS: missing kubernetes and postgres depth."
-_WRITER_RESPONSE = "OPTIMIZED CV: python backend engineer with fastapi and postgres."
+_WRITER_RESPONSE = (
+    '{"summary": "OPTIMIZED CV: python backend engineer with fastapi and '
+    'postgres.", "technical_skills": "python, fastapi, postgres", '
+    '"experience": "backend engineering", "projects": "", "education": "", '
+    '"certifications": "", "languages": ""}'
+)
 _AUDITOR_RESPONSE = "VARIANCE SCORE: {variance_score}"
 
 
