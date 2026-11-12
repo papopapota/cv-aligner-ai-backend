@@ -15,6 +15,7 @@ from src.application.ports.inbound.cv_upload_use_case import (
     FileUpload,
 )
 from src.application.ports.out.user_port import UserRepositoryPort
+from src.domain.cv_sections import CVSections
 from src.domain.cv_status import CVStatus
 from src.domain.entities.cv import CV
 from src.domain.entities.user import User
@@ -63,9 +64,22 @@ def _cv(**overrides: object) -> CV:
     return CV(**values)  # type: ignore[arg-type]
 
 
+def _sections() -> CVSections:
+    return CVSections(
+        summary="Backend engineer",
+        technical_skills="python, fastapi",
+        experience="5 years",
+        projects="cv-aligner",
+        education="CS degree",
+        certifications="AWS",
+        languages="english, spanish",
+    )
+
+
 def _optimized() -> OptimizedCV:
+    sections = _sections()
     return OptimizedCV(
-        content="Optimized backend engineer body.",
+        content=sections.to_text(),
         original_variance_score=0.8,
         optimized_variance_score=0.1,
         writer_attempts=1,
@@ -76,6 +90,7 @@ def _optimized() -> OptimizedCV:
             location=Location(city="Lima", country="Peru"),
             links=ProfessionalLinks(github="github.com/ana"),
         ),
+        optimized_sections=sections,
     )
 
 
@@ -199,6 +214,38 @@ async def test_get_returns_the_cv_status(
     assert body["error_code"] is None
     assert body["error_message"] is None
     query_use_case.get.assert_awaited_once_with(cv.id, _USER_ID)
+
+
+async def test_get_returns_the_parsed_sections_when_the_cv_is_parsed(
+    client: AsyncClient,
+    query_use_case: AsyncMock,
+) -> None:
+    cv = _cv(status=CVStatus.PARSED, parsed_sections=_sections())
+    query_use_case.get.return_value = cv
+
+    response = await client.get(
+        f"/api/v1/cvs/{cv.id}",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["parsed_sections"] == _sections().to_dict()
+
+
+async def test_get_returns_null_sections_while_the_cv_is_processing(
+    client: AsyncClient,
+    query_use_case: AsyncMock,
+) -> None:
+    cv = _cv(status=CVStatus.PARSING, parsed_sections=_sections())
+    query_use_case.get.return_value = cv
+
+    response = await client.get(
+        f"/api/v1/cvs/{cv.id}",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["parsed_sections"] is None
 
 
 async def test_get_exposes_the_stored_failure(
@@ -358,6 +405,7 @@ async def test_list_returns_the_users_cvs(
     assert [item["id"] for item in body] == [str(cv.id) for cv in cvs]
     assert body[0]["action_required"] == "WAIT_FOR_PARSING"
     assert body[1]["action_required"] is None
+    assert all("parsed_sections" not in item for item in body)
     query_use_case.list.assert_awaited_once_with(_USER_ID)
 
 
@@ -377,7 +425,26 @@ async def test_optimize_returns_the_optimized_cv(
     assert response.status_code == 200
     body = response.json()
     assert body["optimized_content"].startswith("Ana Developer")
-    assert body["optimized_body"] == "Optimized backend engineer body."
+    assert body["optimized_body"] == _sections().to_text()
+    assert body["optimized_sections"] == _sections().to_dict()
+    assert body["optimized_body"] == "\n".join(
+        f"{label}: {value}"
+        for label, value in (
+            ("Summary", body["optimized_sections"]["summary"]),
+            (
+                "Technical skills",
+                body["optimized_sections"]["technical_skills"],
+            ),
+            ("Experience", body["optimized_sections"]["experience"]),
+            ("Projects", body["optimized_sections"]["projects"]),
+            ("Education", body["optimized_sections"]["education"]),
+            (
+                "Certifications",
+                body["optimized_sections"]["certifications"],
+            ),
+            ("Languages", body["optimized_sections"]["languages"]),
+        )
+    )
     assert body["original_variance_score"] == 0.8
     assert body["optimized_variance_score"] == 0.1
     assert body["writer_attempts"] == 1

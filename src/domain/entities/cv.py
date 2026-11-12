@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from src.domain.cv_sections import CVSections
 from src.domain.cv_status import CVStatus, is_ready_for_optimization
 from src.domain.errors import InvalidUploadError
 from src.domain.structured_cv import StructuredCV
@@ -19,6 +20,7 @@ class CV:
     status: CVStatus
     raw_text: str | None = None
     structured_cv: StructuredCV | None = None
+    parsed_sections: CVSections | None = None
     error_code: str | None = None
     error_message: str | None = None
     created_at: datetime | None = None

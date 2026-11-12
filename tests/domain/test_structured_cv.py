@@ -126,6 +126,20 @@ def test_to_dict_round_trips_through_from_mapping() -> None:
     assert StructuredCV.from_mapping(structured.to_dict()) == structured
 
 
+def test_to_sections_maps_the_technical_dimensions() -> None:
+    structured = StructuredCV.from_mapping(_payload())
+
+    assert structured.to_sections().to_dict() == {
+        "summary": "Backend engineer",
+        "technical_skills": "python, fastapi",
+        "experience": "5 years",
+        "projects": "cv-aligner",
+        "education": "CS degree",
+        "certifications": "AWS",
+        "languages": "english, spanish",
+    }
+
+
 def test_is_empty() -> None:
     assert StructuredCV().is_empty()
     assert not StructuredCV(

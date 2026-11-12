@@ -4,6 +4,7 @@ from src.domain.audit_rules import (
     DEFAULT_IC_TARGET,
     MAX_VARIANCE_THRESHOLD,
 )
+from src.domain.cv_sections import CVSections
 from src.domain.errors import InvalidUploadError
 from src.domain.personal_info import PersonalInfo, render_personal_header
 
@@ -26,6 +27,7 @@ class OptimizedCV:
     optimized_per_dimension: dict[str, float] = field(default_factory=dict)
     gap_report: str = ""
     personal_info: PersonalInfo | None = None
+    optimized_sections: CVSections = field(default_factory=CVSections)
 
     def __post_init__(self) -> None:
         if not self.content.strip():
@@ -81,8 +83,13 @@ class OptimizedCV:
         return variance_passed and ic_passed
 
     @property
+    def body(self) -> str:
+        rendered = self.optimized_sections.to_text()
+        return rendered if rendered else self.content
+
+    @property
     def full_content(self) -> str:
         header = render_personal_header(self.personal_info)
         if not header:
-            return self.content
-        return f"{header}\n\n{self.content}"
+            return self.body
+        return f"{header}\n\n{self.body}"

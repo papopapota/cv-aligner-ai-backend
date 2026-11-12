@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from src.domain.cv_sections import CVSections
 from src.domain.errors import InvalidStructureError
 from src.domain.json_extraction import extract_json_object
 from src.domain.personal_info import PersonalInfo
@@ -17,6 +18,9 @@ class StructuredCV:
             "personal_info": self.personal_info.to_dict(),
             "technical_data": self.technical_data.to_dict(),
         }
+
+    def to_sections(self) -> CVSections:
+        return CVSections.from_semantic_profile(self.technical_data)
 
     @classmethod
     def from_mapping(cls, data: object) -> "StructuredCV":

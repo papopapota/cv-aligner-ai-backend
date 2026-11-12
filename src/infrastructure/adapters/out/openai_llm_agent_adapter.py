@@ -27,8 +27,14 @@ _SYSTEM_PROMPTS: dict[AgentRole, str] = {
     AgentRole.WRITER: (
         "Reescribe el CV potenciando las aptitudes que cubren cada carencia "
         "del análisis. Mantente fiel a la información original: no inventes "
-        "experiencia ni habilidades. Responde en el mismo idioma del CV "
-        "original."
+        "experiencia ni habilidades. Responde ÚNICAMENTE con un JSON de la "
+        "forma "
+        '{"summary": "<texto>", "technical_skills": "<texto>", '
+        '"experience": "<texto>", "projects": "<texto>", '
+        '"education": "<texto>", "certifications": "<texto>", '
+        '"languages": "<texto>"}. '
+        "Cada valor es TEXTO, no listas. Si un campo no aplica, déjalo con "
+        'valor "". Responde en el mismo idioma del CV original.'
     ),
     AgentRole.AUDITOR: (
         "Evalúa cuánto difiere el CV recibido respecto a la descripción del "

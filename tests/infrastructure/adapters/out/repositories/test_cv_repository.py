@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+from src.domain.cv_sections import CVSections
 from src.domain.cv_status import CVStatus
 from src.domain.entities.cv import CV
 from src.domain.personal_info import PersonalInfo
@@ -74,7 +75,16 @@ def _structured_cv() -> StructuredCV:
         technical_data=SemanticProfile(
             summary="Backend engineer",
             technical_skills="python, fastapi",
+            projects="cv-aligner",
         ),
+    )
+
+
+def _sections() -> CVSections:
+    return CVSections(
+        summary="Backend engineer",
+        technical_skills="python, fastapi",
+        projects="cv-aligner",
     )
 
 
@@ -175,6 +185,7 @@ async def test_get_status_by_id_omits_the_content(
     assert found.status is CVStatus.PARSED
     assert found.raw_text is None
     assert found.structured_cv is None
+    assert found.parsed_sections == _sections()
 
 
 async def test_get_status_by_id_hides_cvs_owned_by_another_user(
@@ -229,6 +240,7 @@ async def test_list_status_by_user_omits_the_content(
     assert [cv.id for cv in listed] == [second.id, first.id]
     assert all(cv.raw_text is None for cv in listed)
     assert all(cv.structured_cv is None for cv in listed)
+    assert all(cv.parsed_sections is None for cv in listed)
 
 
 async def test_update_status_changes_the_lifecycle_state(
@@ -279,6 +291,7 @@ async def test_save_parsed_persists_text_and_structure(
     assert updated.status is CVStatus.PARSED
     assert updated.raw_text == "Ana Developer\nBackend engineer"
     assert updated.structured_cv == structured
+    assert updated.parsed_sections == _sections()
     assert updated.error_code is None
     assert updated.error_message is None
 
