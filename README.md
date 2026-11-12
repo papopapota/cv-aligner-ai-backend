@@ -271,6 +271,15 @@ Devuelve el estado actual del CV. Es el endpoint de polling:
   "size_bytes": 102400,
   "sha256": "…",
   "status": "PARSED",
+  "parsed_sections": {
+    "summary": "Backend engineer…",
+    "technical_skills": "Python, FastAPI…",
+    "experience": "5 años…",
+    "projects": "cv-aligner…",
+    "education": "Ingeniería…",
+    "certifications": "AWS…",
+    "languages": "Inglés, Español"
+  },
   "error_code": null,
   "error_message": null,
   "action_required": null,
@@ -288,7 +297,7 @@ Devuelve el estado actual del CV. Es el endpoint de polling:
 
 Un CV en `ERROR` sigue devolviendo `200` con `error_code` y `error_message`. El objeto S3 se conserva; actualmente no existe endpoint de reintento. Un `cv_id` inexistente o de otro usuario devuelve `404`.
 
-Para el polling se recomienda empezar con intervalos de 1 segundo, pasar a 2 y luego a 5 segundos, y detenerse cuando el estado sea `PARSED` o `ERROR`. La consulta de estado no carga el texto del CV ni el JSON estructurado desde PostgreSQL.
+Para el polling se recomienda empezar con intervalos de 1 segundo, pasar a 2 y luego a 5 segundos, y detenerse cuando el estado sea `PARSED` o `ERROR`. `parsed_sections` sólo se rellena en `PARSED`; mientras el CV está en `UPLOADED` o `PARSING` devuelve `null`. La consulta de estado no carga `raw_text`; para el detalle individual sí se leen las secciones desde `structured_json`, mientras que el listado no carga ese JSON.
 
 #### `GET /api/v1/cvs/{cv_id}/content`
 
@@ -326,7 +335,7 @@ Si el CV está en `UPLOADED` o `PARSING`, devuelve `409` con `action_required: "
 
 #### `GET /api/v1/cvs`
 
-Lista los CVs del usuario autenticado con el mismo esquema de estado. No incluye el texto del CV ni el JSON estructurado.
+Lista los CVs del usuario autenticado con el esquema de estado, sin `parsed_sections`. No incluye el texto del CV ni el JSON estructurado.
 
 #### `POST /api/v1/cvs/{cv_id}/optimize`
 
@@ -343,8 +352,17 @@ También se acepta el alias `job_description_text`. La respuesta incluye la cabe
 
 ```json
 {
-  "optimized_content": "Ana Developer\nBackend Developer\n…\n\n<contenido optimizado>",
-  "optimized_body": "<contenido técnico optimizado>",
+  "optimized_content": "Ana Developer\nBackend Developer\n…\n\n<contenido optimizado ensamblado desde optimized_sections>",
+  "optimized_body": "Summary: …\nTechnical skills: …\nExperience: …\nProjects: …\nEducation: …\nCertifications: …\nLanguages: …",
+  "optimized_sections": {
+    "summary": "…",
+    "technical_skills": "…",
+    "experience": "…",
+    "projects": "…",
+    "education": "…",
+    "certifications": "…",
+    "languages": "…"
+  },
   "original_variance_score": 0.72,
   "optimized_variance_score": 0.12,
   "writer_attempts": 2,
@@ -365,7 +383,7 @@ También se acepta el alias `job_description_text`. La respuesta incluye la cabe
 }
 ```
 
-El optimizador solo recibe los datos técnicos (`summary`, skills, experiencia, proyectos, educación, certificaciones, idiomas); la información personal se reinserta después sin pasar por el LLM. Si el CV no está listo devuelve `409` con `action_required: "WAIT_FOR_PARSING"`; si falló, `409` con `error_code` y `action_required: "REUPLOAD_CV"`; si no existe o es de otro usuario, `404`. Un `job_description` vacío devuelve `422`.
+El optimizador solo recibe los datos técnicos (`summary`, skills, experiencia, proyectos, educación, certificaciones, idiomas); la información personal se reinserta después sin pasar por el LLM. `optimized_body` se ensambla de forma determinista desde `optimized_sections` y `optimized_content` añade la cabecera personal, por lo que ambos son consistentes con las secciones. Si el CV no está listo devuelve `409` con `action_required: "WAIT_FOR_PARSING"`; si falló, `409` con `error_code` y `action_required: "REUPLOAD_CV"`; si no existe o es de otro usuario, `404`. Un `job_description` vacío devuelve `422`.
 
 > **Nota:** el pipeline llama a un LLM real compatible OpenAI (SDK `openai`). Requiere `LLM_API_KEY` en `.env`; si no está configurada, la app no arranca. Para desarrollo sin clave, apunta `LLM_BASE_URL` a un servidor local como Ollama o LM Studio.
 
