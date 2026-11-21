@@ -47,3 +47,11 @@ class CVFailedError(CVProcessingError):
 
 class StorageError(DomainError):
     pass
+
+
+class InvalidJobUrlError(DomainError):
+    pass
+
+
+class JobDescriptionFetchError(DomainError):
+    pass

@@ -16,10 +16,12 @@ flowchart TB
         
         subgraph PortsIn["PUERTOS INBOUND<br/>src/application/ports/inbound"]
             P_In["OptimizeCVUseCase<br/>(Interfaz)"]
+            P_Extract["ExtractJobDescriptionUseCase<br/>(Interfaz)"]
         end
 
         subgraph Application["LÓGICA DE APLICACIÓN"]
             Service["OptimizeCVService<br/>(Coordina el flujo de negocio)"]
+            ExtractService["ExtractJobDescriptionService<br/>(URL → texto de la oferta)"]
         end
 
         subgraph Domain["NÚCLEO DE DOMINIO"]
@@ -30,6 +32,7 @@ flowchart TB
 
         subgraph PortsOut["PUERTOS OUT<br/>src/application/ports/out"]
             P_Parser["CVParserPort"]
+            P_Source["JobDescriptionSourcePort<br/>(HTTP + HTML/JSON-LD)"]
             P_Graph["WorkflowOrchestratorPort"]
             P_LLM["LLMAgentPort"]
             P_Scorer["MatchScorerPort<br/>(Embeddings + TF-IDF)"]
@@ -38,6 +41,7 @@ flowchart TB
         end
 
         P_In --> Service
+        P_Extract --> ExtractService
         Service --> Domain
         Service --> PortsOut
     end
@@ -50,6 +54,10 @@ flowchart TB
 
         subgraph AdapterParsers["Adaptador Parsers"]
             PDFParser["PyPDF / Docx Parser"]
+        end
+
+        subgraph AdapterJobSource["Adaptador Extracción de Oferta (URL)"]
+            WebFetch["HTTPX AsyncClient + Parser HTML/JSON-LD<br/>(anti-SSRF)"]
         end
 
         subgraph AdapterGraph["Adaptador LangGraph (Control Lógico)"]
@@ -87,9 +95,11 @@ flowchart TB
 
     %% Conexiones Primarias
     API --> P_In
+    API --> P_Extract
 
     %% Conexiones Secundarias (Puertos a Adaptadores)
     P_Parser -. Implementado por .-> PDFParser
+    P_Source -. Implementado por .-> WebFetch
     P_Graph -. Implementado por .-> LG_Engine
     P_LLM -. Implementado por .-> LLM_API
     P_Scorer -. Implementado por .-> ScorerEngine

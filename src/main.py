@@ -10,14 +10,18 @@ from src.domain.errors import (
     CVFailedError,
     CVNotFoundError,
     CVNotReadyError,
+    InvalidJobUrlError,
     InvalidUploadError,
+    JobDescriptionFetchError,
     StorageError,
 )
 from src.infrastructure.adapters.inbound.api.domain_error_handler import (
     handle_cv_failed,
     handle_cv_not_found,
     handle_cv_not_ready,
+    handle_invalid_job_url,
     handle_invalid_upload,
+    handle_job_description_fetch,
     handle_storage_error,
 )
 from src.infrastructure.adapters.inbound.api.routers.application_router import (
@@ -26,6 +30,9 @@ from src.infrastructure.adapters.inbound.api.routers.application_router import (
 from src.infrastructure.adapters.inbound.api.routers.auth_router import router as auth_router
 from src.infrastructure.adapters.inbound.api.routers.cv_router import (
     router as cvs_router,
+)
+from src.infrastructure.adapters.inbound.api.routers.job_description_router import (
+    router as job_description_router,
 )
 from src.infrastructure.config import CORSSettings
 from src.infrastructure.database import dispose_engine
@@ -65,6 +72,8 @@ app.add_middleware(
 
 
 app.add_exception_handler(InvalidUploadError, handle_invalid_upload)
+app.add_exception_handler(InvalidJobUrlError, handle_invalid_job_url)
+app.add_exception_handler(JobDescriptionFetchError, handle_job_description_fetch)
 app.add_exception_handler(CVNotFoundError, handle_cv_not_found)
 app.add_exception_handler(CVNotReadyError, handle_cv_not_ready)
 app.add_exception_handler(CVFailedError, handle_cv_failed)
@@ -72,6 +81,7 @@ app.add_exception_handler(StorageError, handle_storage_error)
 app.include_router(cvs_router, prefix=API_V1_PREFIX)
 app.include_router(auth_router, prefix=API_V1_PREFIX)
 app.include_router(application_router, prefix=API_V1_PREFIX)
+app.include_router(job_description_router, prefix=API_V1_PREFIX)
 
 
 @app.get("/health")

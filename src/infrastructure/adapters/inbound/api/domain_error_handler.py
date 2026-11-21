@@ -62,3 +62,20 @@ async def handle_storage_error(
         status_code=502,
         content={"detail": "Storage service unavailable."},
     )
+
+
+async def handle_invalid_job_url(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+async def handle_job_description_fetch(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=502,
+        content={"detail": "No se pudo obtener la descripción desde la URL."},
+    )
