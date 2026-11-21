@@ -110,6 +110,26 @@ class MatchScoringSettings(BaseSettings):
         return self
 
 
+class JobFetchSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="JOB_FETCH_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    timeout_seconds: float = 10.0
+    max_bytes: int = 2 * 1024 * 1024
+    max_redirects: int = 3
+    max_description_chars: int = 20000
+
+    @field_validator("timeout_seconds", "max_bytes", "max_redirects", "max_description_chars")
+    @classmethod
+    def _validate_positive(cls, value: float | int) -> float | int:
+        if value <= 0:
+            raise ValueError("JOB_FETCH_* values must be positive.")
+        return value
+
+
 class S3Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="S3_",

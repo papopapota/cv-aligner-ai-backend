@@ -13,6 +13,9 @@ from src.application.ports.inbound.cv_optimization_use_case import (
 from src.application.ports.inbound.cv_processing_use_case import CVProcessingUseCase
 from src.application.ports.inbound.cv_query_use_case import CVQueryUseCase
 from src.application.ports.inbound.cv_upload_use_case import CVUploadUseCase
+from src.application.ports.inbound.extract_job_description_use_case import (
+    ExtractJobDescriptionUseCase,
+)
 from src.application.ports.inbound.optimize_cv_use_case import OptimizeCVUseCase
 from src.application.ports.inbound.upload_cv_use_case import UploadCVUseCase
 from src.application.ports.out.cv_repository_port import CVRepositoryPort
@@ -25,6 +28,9 @@ from src.application.services.cv_optimization_service import CVOptimizationServi
 from src.application.services.cv_processing_service import CVProcessingService
 from src.application.services.cv_query_service import CVQueryService
 from src.application.services.cv_upload_service import CVUploadService
+from src.application.services.extract_job_description_service import (
+    ExtractJobDescriptionService,
+)
 from src.application.services.optimize_cv_service import OptimizeCVService
 from src.application.services.upload_cv_service import UploadCVService
 from src.infrastructure.adapters.out.document_parser_adapter import (
@@ -32,6 +38,9 @@ from src.infrastructure.adapters.out.document_parser_adapter import (
 )
 from src.infrastructure.adapters.out.embedding_match_scorer_adapter import (
     EmbeddingMatchScorerAdapter,
+)
+from src.infrastructure.adapters.out.job_description_source_adapter import (
+    JobDescriptionSourceAdapter,
 )
 from src.infrastructure.adapters.out.langgraph_orchestrator_adapter import (
     LangGraphOrchestratorAdapter,
@@ -48,6 +57,7 @@ from src.infrastructure.adapters.out.repositories.cv_repository import (
 from src.infrastructure.adapters.out.s3_storage_adapter import S3StorageAdapter
 from src.infrastructure.config import (
     AuditSettings,
+    JobFetchSettings,
     LLMConfigurationError,
     LLMSettings,
     MatchScoringSettings,
@@ -60,6 +70,10 @@ logger = logging.getLogger(__name__)
 
 def build_upload_cv_use_case() -> UploadCVUseCase:
     return UploadCVService(DocumentParserAdapter())
+
+
+def build_extract_job_description_use_case() -> ExtractJobDescriptionUseCase:
+    return ExtractJobDescriptionService(JobDescriptionSourceAdapter(JobFetchSettings()))
 
 
 def _build_openai_client() -> AsyncOpenAI:

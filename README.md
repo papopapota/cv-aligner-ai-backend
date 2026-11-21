@@ -169,6 +169,7 @@ Los pesos deben sumar 1. Antes de generar embeddings y calcular TF-IDF se ofusca
 | Método | Ruta | Descripción | Respuesta |
 | ------ | ---- | ----------- | --------- |
 | GET | `/health` | Verificación de estado | `{"status": "ok"}` |
+| POST | `/api/v1/job-descriptions/extract` | Extrae título, empresa y descripción de una oferta desde una URL pública (sin autenticación) | `{"title": "...", "company": "...", "description": "..."}` |
 | POST | `/api/v1/auth/register` | Registro de usuario (hash bcrypt) | Usuario creado |
 | POST | `/api/v1/auth/login` | Login con email y contraseña | Tokens JWT |
 | POST | `/api/v1/auth/refresh` | Renueva tokens con un refresh token | Tokens JWT |
@@ -182,7 +183,35 @@ Los pesos deben sumar 1. Antes de generar embeddings y calcular TF-IDF se ofusca
 | PATCH | `/api/v1/applications/{id}/status` | Actualiza el estado de una postulación | Postulación actualizada |
 | DELETE | `/api/v1/applications/{id}` | Elimina una postulación del usuario autenticado | `204` sin body |
 
-Todos los endpoints de CV y postulaciones requieren `Authorization: Bearer <access_token>`. El dueño se obtiene del `sub` del JWT (email), nunca de un `user_id` enviado por el cliente.
+Todos los endpoints de CV y postulaciones requieren `Authorization: Bearer <access_token>`. El dueño se obtiene del `sub` del JWT (email), nunca de un `user_id` enviado por el cliente. La extracción desde URL es pública; no necesita token.
+
+### Extracción de descripción desde URL
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/job-descriptions/extract \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://empresa.com/ofertas/backend"}'
+# {"title": "Backend Engineer", "company": "Acme Corp", "description": "Buscamos Python y FastAPI.\nRemoto."}
+```
+
+`title` y `company` son anulables (`null`): si la web no los expone, el frontend mantiene sus valores por defecto (primera línea de la descripción y hostname).
+
+El adaptador `JobDescriptionSourceAdapter` descarga la página con HTTPX de forma asíncrona y el parser devuelve un `JobPostingContent` con tres campos:
+
+- **Descripción**: prefiere el campo `description` de un `JobPosting` en JSON-LD (incluyendo nodos dentro de `@graph`); si no existe, extrae el texto de `main`/`article` o del `body`, descartando navegación, scripts y estilos.
+- **Título** (cascada): selectores de LinkedIn `h1.top-card-layout__title`, `.topcard__title` y `[class~="top-card-layout__title"]` → `title` del `JobPosting` en JSON-LD → `<h1>` genérico de `main`/`article`/`[role=main]` → `null`.
+- **Empresa** (cascada): `a.topcard__org-name-link` / `.topcard__org-name-link` / primer `.topcard__flavor` que no sea un separador → `hiringOrganization.name` del `JobPosting` en JSON-LD → `null`.
+
+La búsqueda de título y empresa se hace sobre el HTML completo, antes de filtrar `header`/`nav`, porque el *top card* de LinkedIn puede vivir en esas secciones. La descripción se normaliza y se limita a `JOB_FETCH_MAX_DESCRIPTION_CHARS` para no encarecer la optimización posterior.
+
+Medidas anti-SSRF: solo `http`/`https`, sin credenciales en la URL, rechazo de dominios internos y de IPs privadas/loopback/link-local/reservadas (también después de resolver DNS), máximo `JOB_FETCH_MAX_REDIRECTS` saltos revalidando cada destino, timeout, límite de bytes y allowlist de `Content-Type` (`text/html`, `application/xhtml+xml`, `text/plain`, `application/json`). Los errores de red se devuelven como `502` con un mensaje genérico.
+
+| Variable | Uso |
+| --- | --- |
+| `JOB_FETCH_TIMEOUT_SECONDS` | Timeout de conexión/lectura por petición (default `10`). |
+| `JOB_FETCH_MAX_BYTES` | Tamaño máximo de la respuesta (default `2 MB`). |
+| `JOB_FETCH_MAX_REDIRECTS` | Máximo de redirecciones seguidas (default `3`). |
+| `JOB_FETCH_MAX_DESCRIPTION_CHARS` | Caracteres máximos devueltos en `description` (default `20000`). |
 
 ### Contrato de `/api/v1/applications`
 
